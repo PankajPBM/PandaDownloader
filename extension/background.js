@@ -4,7 +4,6 @@ const tabMediaMap = new Map();
 const MEDIA_MIME_PATTERNS = [
   /^video\//i,
   /^audio\//i,
-  /^image\/(jpeg|png|gif|webp|svg\+xml|tiff|bmp)/i,
   /application\/vnd\.apple\.mpegurl/i, // HLS m3u8
   /application\/x-mpegurl/i,
   /application\/dash\+xml/i,          // DASH mpd
@@ -17,7 +16,7 @@ const MEDIA_MIME_PATTERNS = [
   /application\/octet-stream/i
 ];
 
-const MEDIA_EXTENSIONS = /\.(mp4|webm|mkv|flv|avi|mov|wmv|ts|m4v|mp3|m4a|aac|wav|ogg|flac|opus|m3u8|mpd|zip|rar|7z|tar|gz|bz2|iso|xz|exe|msi|apk|dmg|pkg|pdf|epub|jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i;
+const MEDIA_EXTENSIONS = /\.(mp4|webm|mkv|flv|avi|mov|wmv|ts|m4v|mp3|m4a|aac|wav|ogg|flac|opus|m3u8|mpd|zip|rar|7z|tar|gz|bz2|iso|xz|exe|msi|apk|dmg|pkg|pdf)(\?.*)?$/i;
 
 // Auto-intercept Chrome native downloads for accelerated multi-segment downloading
 if (chrome.downloads && chrome.downloads.onCreated) {
@@ -70,8 +69,13 @@ chrome.webRequest.onHeadersReceived.addListener(
     const isMediaExt = MEDIA_EXTENSIONS.test(details.url);
     const isAttachment = contentDisposition.includes('attachment');
 
-    // Filter out small images/icons or tiny web chunks (< 50KB unless explicit media type)
-    if ((isMediaMime || isMediaExt || isAttachment) && (contentLength > 50000 || isMediaMime)) {
+    // Filter out UI sound effects and tiny chunks (< 150KB unless explicit streaming playlist like m3u8)
+    const isStreamManifest = details.url.includes('.m3u8') || details.url.includes('.mpd');
+    if (!isStreamManifest && contentLength > 0 && contentLength < 150000) {
+      return;
+    }
+
+    if (isMediaMime || isMediaExt || isAttachment) {
       let mediaList = tabMediaMap.get(details.tabId) || [];
 
       // Avoid duplicates
