@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Panda Downloader Integration Module",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Automatically detect and capture high-speed video, audio, and file downloads directly with Panda Downloader by PB Tech Zone.",
   "icons": {
     "16": "icons/icon16.png",

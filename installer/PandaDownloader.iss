@@ -4,7 +4,7 @@
 ; Support WhatsApp: +9779814891277
 
 #define MyAppName "Panda Downloader"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "PB Tech Zone"
 #define MyAppURL "https://prakash77.com.np"
 #define MyAppWhatsApp "https://wa.me/9779814891277"
@@ -25,7 +25,7 @@ DefaultGroupName={#MyAppPublisher}\{#MyAppName}
 AllowNoIcons=yes
 LicenseFile=..\LICENSE
 OutputDir=Output
-OutputBaseFilename=PandaDownloader_Setup_v1.0.0
+OutputBaseFilename=PandaDownloader_Setup_v1.1.0
 SetupIconFile=..\assets\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -33,7 +33,7 @@ WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\assets\icon.ico
-VersionInfoVersion=1.0.0.0
+VersionInfoVersion=1.1.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=High-Speed Multi-Threaded Dynamic Segmentation Download Manager
 VersionInfoCopyright=Copyright (C) 2026 PB Tech Zone

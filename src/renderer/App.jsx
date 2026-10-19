@@ -1268,6 +1268,16 @@ export default function App() {
               <div className="settings-group-title">Publisher & Support</div>
               <div className="settings-row">
                 <div>
+                  <div style={{ fontWeight: 600 }}>App Version</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>v1.1.0 Production Release (IDM Multi-Segment Engine)</div>
+                </div>
+                <div style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                  v1.1.0
+                </div>
+              </div>
+
+              <div className="settings-row">
+                <div>
                   <div style={{ fontWeight: 600 }}>Publisher / Developer</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>PB Tech Zone</div>
                 </div>
