@@ -35,6 +35,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
+UninstallDisplayName={#MyAppName} v{#MyAppVersion} (PB Tech Zone)
 UninstallDisplayIcon={app}\assets\icon.ico
 VersionInfoVersion=1.1.0.0
 VersionInfoCompany={#MyAppPublisher}
@@ -61,7 +62,7 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "
 Name: "{group}\Install Browser Extension"; Filename: "{app}\extension"; IconFilename: "{app}\assets\icon.ico"
 Name: "{group}\PB Tech Zone Website"; Filename: "{#MyAppURL}"
 Name: "{group}\WhatsApp Support"; Filename: "{#MyAppWhatsApp}"
-Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"; IconFilename: "{app}\assets\icon.ico"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: desktopicon
 Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: desktopicon
 
@@ -118,6 +119,10 @@ begin
     KillProcess('ffmpeg.exe');
     KillProcess('yt-dlp.exe');
     Sleep(500);
+
+    // Clean out old application dist and cache to guarantee 100% fresh installation
+    DelTree(ExpandConstant('{app}\resources\app\dist'), True, True, True);
+    DelTree(ExpandConstant('{app}\resources\app\src'), True, True, True);
   end;
 end;
 
@@ -139,4 +144,7 @@ begin
     'Official Website: ' + '{#MyAppURL}' + #13#10 +
     'Support WhatsApp: +977 9814891277' + #13#10#13#10 +
     'This will install Panda Downloader high-speed acceleration engine on your computer.';
+
+  // Automatically check "I accept the agreement" by default
+  WizardForm.LicenseAcceptedRadio.Checked := True;
 end;

@@ -1315,7 +1315,7 @@ export default function App() {
                 <span style={{ fontSize: 20 }}>📥</span>
                 <div className="modal-title">Download File Info</div>
               </div>
-              <button className="titlebar-btn" onClick={() => setShowAddModal(false)}>
+              <button className="modal-close-btn" onClick={() => setShowAddModal(false)} title="Close">
                 <X size={16} />
               </button>
             </div>
@@ -1399,7 +1399,7 @@ export default function App() {
                 <span style={{ fontSize: 20 }}>📦</span>
                 <div className="modal-title">Batch / Bulk Downloader</div>
               </div>
-              <button className="titlebar-btn" onClick={() => setShowBatchModal(false)}>
+              <button className="modal-close-btn" onClick={() => setShowBatchModal(false)} title="Close">
                 <X size={16} />
               </button>
             </div>
@@ -1480,7 +1480,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <button className="titlebar-btn" onClick={() => setShowSettingsModal(false)}>
+              <button className="modal-close-btn" onClick={() => setShowSettingsModal(false)} title="Close Preferences">
                 <X size={16} />
               </button>
             </div>
@@ -1881,7 +1881,7 @@ export default function App() {
                 <AlertCircle size={20} />
                 <div className="modal-title" style={{ color: '#f43f5e' }}>Delete Download</div>
               </div>
-              <button className="titlebar-btn" onClick={() => setDeleteTarget(null)}>
+              <button className="modal-close-btn" onClick={() => setDeleteTarget(null)} title="Close">
                 <X size={16} />
               </button>
             </div>
@@ -1933,7 +1933,7 @@ export default function App() {
                   {selectedTaskIds.size > 0 ? `Delete Selected (${selectedTaskIds.size})` : `Clear All Downloads (${filteredTasks.length})`}
                 </div>
               </div>
-              <button className="titlebar-btn" onClick={() => setShowClearModal(false)}>
+              <button className="modal-close-btn" onClick={() => setShowClearModal(false)} title="Close">
                 <X size={16} />
               </button>
             </div>

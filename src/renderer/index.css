@@ -221,6 +221,45 @@ button,
   color: white;
 }
 
+[data-theme="light"] .titlebar-btn:hover {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+[data-theme="light"] .titlebar-btn.close:hover {
+  background: #e11d48;
+  color: #ffffff;
+}
+
+/* Constant Modal Close Button across all dialogs */
+.modal-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.modal-close-btn:hover {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--accent-rose);
+  border-color: rgba(244, 63, 94, 0.3);
+}
+
+[data-theme="light"] .modal-close-btn:hover {
+  background: rgba(225, 29, 72, 0.1);
+  color: #e11d48;
+  border-color: rgba(225, 29, 72, 0.25);
+}
+
 /* App Layout */
 .app-container {
   display: flex;
