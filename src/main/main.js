@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const { DownloadManager } = require('./downloader/manager');
+const { probeMedia } = require('./downloader/videoEngine');
 const settingsManager = require('./settings');
 
 let mainWindow = null;
@@ -300,6 +301,29 @@ function startLoopbackServer() {
       return;
     }
 
+    if (req.method === 'GET' && req.url.startsWith('/api/probe')) {
+      try {
+        const parsedUrl = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
+        const targetVideoUrl = parsedUrl.searchParams.get('url');
+        if (!targetVideoUrl) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing url parameter' }));
+          return;
+        }
+        probeMedia(targetVideoUrl).then(result => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        }).catch(err => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message, formats: [] }));
+        });
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message, formats: [] }));
+      }
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/api/intercept') {
       let body = '';
       req.on('data', chunk => body += chunk);
@@ -402,6 +426,10 @@ function startClipboardMonitor() {
 }
 
 function setupIpcHandlers() {
+  ipcMain.handle('probe-media-formats', async (event, url) => {
+    return await probeMedia(url);
+  });
+
   ipcMain.handle('get-all-tasks', () => {
     return downloadManager.getAllTasks();
   });

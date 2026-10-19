@@ -22,9 +22,99 @@ document.addEventListener('DOMContentLoaded', async () => {
       return !isSoundFx && !isImage && !isTiny;
     });
 
+    function formatBytes(bytes) {
+      if (!bytes || isNaN(bytes) || bytes <= 0) return '';
+      if (bytes < 1024 * 1024) {
+        return `${Math.round(bytes / 1024)} KB`;
+      } else if (bytes < 1024 * 1024 * 1024) {
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      } else {
+        return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      }
+    }
+
     const displayList = [];
 
-    // If on YouTube or video portal, add all 4 primary resolution options with MB sizes
+    const renderItems = () => {
+      countEl.textContent = `${displayList.length} Available`;
+
+      if (displayList.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No video or media streams detected yet.<br>Play a video to capture it with Panda Downloader.</div>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+
+      displayList.forEach((item) => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'media-item';
+
+        itemEl.innerHTML = `
+          <div class="media-info">
+            <div class="media-title" title="${item.filename}">${item.filename}</div>
+            <div class="media-meta">${item.displayType}${item.sizeStr ? ` • ${item.sizeStr}` : ''}</div>
+          </div>
+          <button class="download-btn">
+            <span>⬇</span> Download
+          </button>
+        `;
+
+        const btn = itemEl.querySelector('.download-btn');
+        btn.addEventListener('click', () => {
+          btn.textContent = 'Sending...';
+          btn.disabled = true;
+
+          chrome.runtime.sendMessage({
+            action: 'DOWNLOAD_WITH_PANDA',
+            payload: {
+              action: 'ADD_DOWNLOAD',
+              url: item.url,
+              filename: item.filename,
+              format: item.format,
+              quality: item.quality,
+              headers: {
+                'Referer': tab.url,
+                'User-Agent': navigator.userAgent
+              }
+            }
+          }, (res) => {
+            if (chrome.runtime.lastError) {
+              btn.textContent = 'Failed';
+              alert('Make sure Panda Downloader desktop app is running!');
+              btn.disabled = false;
+              return;
+            }
+            if (res && res.success) {
+              btn.textContent = '✓ Added!';
+              btn.style.background = '#059669';
+            } else {
+              btn.textContent = 'Failed';
+              alert(res ? res.error : 'Failed to reach Panda Downloader');
+              btn.disabled = false;
+            }
+          });
+        });
+
+        listEl.appendChild(itemEl);
+      });
+    };
+
+    // Add other sniffed media with real formatted sizes
+    filtered.forEach(item => {
+      const sizeStr = item.size > 0 ? formatBytes(item.size) : 'Stream';
+      const typeStr = item.contentType ? item.contentType.split('/')[1] || item.contentType : 'media';
+      displayList.push({
+        url: item.url,
+        filename: item.filename,
+        format: item.filename.split('.').pop() || 'bin',
+        quality: 'best',
+        displayType: typeStr.toUpperCase(),
+        sizeStr: sizeStr,
+        isPrimary: false
+      });
+    });
+
+    // If on video portal, probe real available formats and accurate sizes from daemon
     if (isYouTube || isVideoPortal) {
       const cleanTitle = (tab.title || 'Video Stream')
         .replace(/- YouTube$/i, '')
@@ -41,70 +131,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       } catch (e) {}
 
-      displayList.push({
-        url: videoUrl,
-        filename: `${cleanTitle}.mp4`,
-        format: 'mp4',
-        quality: '1080p',
-        displayType: '1080p Full HD Video (MP4)',
-        sizeStr: '~194 MB',
-        isPrimary: true
-      });
-
-      displayList.push({
-        url: videoUrl,
-        filename: `${cleanTitle}.mp4`,
-        format: 'mp4',
-        quality: '720p',
-        displayType: '720p HD Video (MP4)',
-        sizeStr: '~90 MB',
-        isPrimary: true
-      });
-
-      displayList.push({
-        url: videoUrl,
-        filename: `${cleanTitle}.mp4`,
-        format: 'mp4',
-        quality: '480p',
-        displayType: '480p Standard Video (MP4)',
-        sizeStr: '~45 MB',
-        isPrimary: true
-      });
-
-      displayList.push({
-        url: videoUrl,
-        filename: `${cleanTitle}.mp3`,
-        format: 'mp3',
-        quality: 'audio',
-        displayType: 'Extract Audio (MP3)',
-        sizeStr: '~10.5 MB',
-        isPrimary: true
-      });
+      fetch(`http://127.0.0.1:45731/api/probe?url=${encodeURIComponent(videoUrl)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.formats && data.formats.length > 0) {
+            const portalItems = data.formats.map(f => ({
+              url: videoUrl,
+              filename: `${cleanTitle}.${f.format || 'mp4'}`,
+              format: f.format || 'mp4',
+              quality: f.quality,
+              displayType: f.label,
+              sizeStr: f.sizeFormatted,
+              isPrimary: true
+            }));
+            displayList.unshift(...portalItems);
+            renderItems();
+          } else {
+            renderItems();
+          }
+        })
+        .catch(() => {
+          renderItems();
+        });
+    } else {
+      renderItems();
     }
-
-    // Add other sniffed media
-    filtered.forEach(item => {
-      const sizeStr = item.size > 0 ? `${(item.size / (1024 * 1024)).toFixed(1)} MB` : 'Stream';
-      const typeStr = item.contentType ? item.contentType.split('/')[1] || item.contentType : 'media';
-      displayList.push({
-        url: item.url,
-        filename: item.filename,
-        format: item.filename.split('.').pop() || 'bin',
-        quality: 'best',
-        displayType: typeStr.toUpperCase(),
-        sizeStr: sizeStr,
-        isPrimary: false
-      });
-    });
-
-    countEl.textContent = `${displayList.length} Available`;
-
-    if (displayList.length === 0) {
-      listEl.innerHTML = '<div class="empty-state">No video or media streams detected yet.<br>Play a video to capture it with Panda Downloader.</div>';
-      return;
-    }
-
-    listEl.innerHTML = '';
 
     displayList.forEach((item) => {
       const itemEl = document.createElement('div');

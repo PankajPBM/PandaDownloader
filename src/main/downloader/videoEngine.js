@@ -125,14 +125,16 @@ class VideoDownloadTask extends EventEmitter {
 
       if (isAudioOnly) {
         args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
-      } else if (this.quality === '1080p') {
-        args.push('-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best');
-      } else if (this.quality === '720p') {
-        args.push('-f', 'bestvideo[height<=720]+bestaudio/best[height<=720]/best');
-      } else if (this.quality === '480p') {
-        args.push('-f', 'bestvideo[height<=480]+bestaudio/best[height<=480]/best');
-      } else if (this.quality === '360p') {
-        args.push('-f', 'bestvideo[height<=360]+bestaudio/best[height<=360]/best');
+      } else if (this.quality && this.quality !== 'best') {
+        const heightMatch = String(this.quality).match(/(\d+)/);
+        if (heightMatch) {
+          const h = parseInt(heightMatch[1], 10);
+          args.push('-f', `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`);
+        } else {
+          args.push('-f', 'bestvideo+bestaudio/best');
+        }
+      } else {
+        args.push('-f', 'bestvideo+bestaudio/best');
       }
 
       args.push('--encoding', 'utf-8');
@@ -445,4 +447,163 @@ function isVideoPortalUrl(url) {
   );
 }
 
-module.exports = { VideoDownloadTask, isVideoPortalUrl };
+const probeCache = new Map();
+
+function probeMedia(url) {
+  return new Promise((resolve) => {
+    const cleanUrl = cleanVideoUrl(url);
+    if (!cleanUrl) return resolve({ title: '', duration: 0, formats: [] });
+
+    const cached = probeCache.get(cleanUrl);
+    if (cached && (Date.now() - cached.timestamp < 10 * 60 * 1000)) {
+      return resolve(cached.data);
+    }
+
+    const spawnEnv = {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONLEGACYWINDOWSSTDIO: 'utf-8'
+    };
+
+    const args = [
+      '--encoding', 'utf-8',
+      '--js-runtimes', 'node',
+      '--no-playlist',
+      '--skip-download',
+      '-J',
+      cleanUrl
+    ];
+
+    let stdoutData = '';
+    let settled = false;
+
+    const proc = spawn(YTDLP_PATH, args, { windowsHide: true, env: spawnEnv });
+
+    proc.stdout.on('data', (chunk) => {
+      stdoutData += chunk;
+    });
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      try { proc.kill(); } catch (e) {}
+      if (result && result.formats && result.formats.length > 0) {
+        probeCache.set(cleanUrl, { timestamp: Date.now(), data: result });
+      }
+      resolve(result);
+    };
+
+    proc.on('close', () => {
+      if (settled) return;
+      try {
+        const rawJson = stdoutData.trim().replace(/^\uFEFF/, '');
+        if (!rawJson) return finish({ title: '', duration: 0, formats: [] });
+        const data = JSON.parse(rawJson);
+        const title = fixMojibake(data.title || '');
+        const duration = data.duration || 0;
+        const allFormats = data.formats || [];
+
+        let bestAudioSize = 0;
+        const audioStreams = allFormats.filter(f => f.vcodec === 'none' && f.acodec !== 'none');
+        for (const a of audioStreams) {
+          const sz = a.filesize || a.filesize_approx || (duration > 0 && a.tbr ? Math.round(a.tbr * 1024 * duration / 8) : 0);
+          if (sz > bestAudioSize) bestAudioSize = sz;
+        }
+        if (bestAudioSize === 0 && duration > 0) {
+          bestAudioSize = Math.round(128 * 1024 * duration / 8);
+        }
+
+        const heightMap = new Map();
+        for (const f of allFormats) {
+          if (!f.height || f.vcodec === 'none') continue;
+          const h = f.height;
+          const existing = heightMap.get(h);
+          const fSize = f.filesize || f.filesize_approx || (duration > 0 && f.tbr ? Math.round(f.tbr * 1024 * duration / 8) : 0);
+          const exSize = existing ? (existing.filesize || existing.filesize_approx || 0) : 0;
+
+          if (!existing || (f.ext === 'mp4' && existing.ext !== 'mp4') || (fSize > exSize)) {
+            heightMap.set(h, f);
+          }
+        }
+
+        const getMetaForHeight = (h) => {
+          if (h >= 4320) return { badge: '8K', label: '8K Ultra HD (MP4)' };
+          if (h >= 2160) return { badge: '4K', label: '4K Ultra HD (MP4)' };
+          if (h >= 1440) return { badge: '2K', label: '2K Quad HD (MP4)' };
+          if (h >= 1080) return { badge: '1080p', label: 'Full HD Video (MP4)' };
+          if (h >= 720) return { badge: '720p', label: 'HD Video (MP4)' };
+          if (h >= 480) return { badge: '480p', label: 'Standard Video (MP4)' };
+          if (h >= 360) return { badge: '360p', label: 'Medium Video (MP4)' };
+          if (h >= 240) return { badge: '240p', label: 'Small Video (MP4)' };
+          return { badge: `${h}p`, label: `${h}p Video (MP4)` };
+        };
+
+        const sortedHeights = Array.from(heightMap.keys()).sort((a, b) => b - a);
+        const formats = [];
+
+        for (const h of sortedHeights) {
+          const f = heightMap.get(h);
+          const meta = getMetaForHeight(h);
+          let rawSize = f.filesize || f.filesize_approx || 0;
+          if (rawSize === 0 && duration > 0 && f.tbr) {
+            rawSize = Math.round(f.tbr * 1024 * duration / 8);
+          }
+          if (f.acodec === 'none' && rawSize > 0) {
+            rawSize += bestAudioSize;
+          }
+
+          let sizeStr = '';
+          if (rawSize > 0) {
+            if (rawSize >= 1024 * 1024 * 1024) {
+              sizeStr = `${(rawSize / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+            } else {
+              sizeStr = `${Math.round(rawSize / (1024 * 1024))} MB`;
+            }
+          }
+
+          formats.push({
+            quality: `${h}p`,
+            height: h,
+            badge: meta.badge,
+            label: meta.label,
+            format: 'mp4',
+            size: rawSize,
+            sizeFormatted: sizeStr
+          });
+        }
+
+        let audioSizeStr = '';
+        if (bestAudioSize > 0) {
+          audioSizeStr = `${(bestAudioSize / (1024 * 1024)).toFixed(1)} MB`;
+        }
+
+        formats.push({
+          quality: 'audio',
+          height: 0,
+          badge: 'AUDIO',
+          label: 'Extract Audio (MP3)',
+          format: 'mp3',
+          size: bestAudioSize,
+          sizeFormatted: audioSizeStr,
+          isAudio: true
+        });
+
+        finish({
+          title,
+          duration,
+          formats
+        });
+      } catch (err) {
+        finish({ title: '', duration: 0, formats: [] });
+      }
+    });
+
+    proc.on('error', () => finish({ title: '', duration: 0, formats: [] }));
+
+    setTimeout(() => {
+      finish({ title: '', duration: 0, formats: [] });
+    }, 12000);
+  });
+}
+
+module.exports = { VideoDownloadTask, isVideoPortalUrl, probeMedia };

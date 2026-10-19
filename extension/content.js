@@ -145,35 +145,119 @@
     const isAudio = mediaInfo.type === 'audio';
     const label = isAudio ? 'Download Audio' : 'Download this video';
 
-    const getEstimatedSize = (quality, dur) => {
-      if (!dur || dur <= 0 || isNaN(dur)) {
-        if (quality === '1080p') return '~194 MB';
-        if (quality === '720p') return '~90 MB';
-        if (quality === '480p') return '~45 MB';
-        if (quality === '360p') return '~26 MB';
-        if (quality === 'audio') return '~10.5 MB';
-        return '';
+    const formatBytes = (bytes) => {
+      if (!bytes || isNaN(bytes) || bytes <= 0) return '';
+      if (bytes < 1024 * 1024) {
+        return `${Math.round(bytes / 1024)} KB`;
+      } else if (bytes < 1024 * 1024 * 1024) {
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      } else {
+        return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
       }
-      if (quality === '1080p') return `${Math.max(1, Math.round(dur * 0.595))} MB`;
-      if (quality === '720p') return `${Math.max(1, Math.round(dur * 0.276))} MB`;
-      if (quality === '480p') return `${Math.max(1, Math.round(dur * 0.138))} MB`;
-      if (quality === '360p') return `${Math.max(1, Math.round(dur * 0.081))} MB`;
-      if (quality === 'audio') return `${(dur * 0.032).toFixed(1)} MB`;
-      return '';
     };
 
-    const getDuration = () => {
-      const el = mediaInfo.element;
-      if (el && el.duration && !isNaN(el.duration) && el.duration > 0) return el.duration;
-      const ytPlayer = document.querySelector('#movie_player');
-      if (ytPlayer && typeof ytPlayer.getDuration === 'function') {
-        const d = ytPlayer.getDuration();
-        if (d && !isNaN(d) && d > 0) return d;
+    let currentVideoUrl = window.location.href;
+    try {
+      const u = new URL(window.location.href);
+      if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
+        const v = u.searchParams.get('v');
+        if (v) currentVideoUrl = `https://www.youtube.com/watch?v=${v}`;
       }
-      return 0;
+    } catch (e) {}
+
+    // Extract YouTube formats and exact stream byte sizes directly from in-page player response
+    const getYouTubeInPageFormats = () => {
+      try {
+        for (const s of document.scripts) {
+          const txt = s.textContent || '';
+          if (txt.includes('ytInitialPlayerResponse')) {
+            const m = txt.match(/ytInitialPlayerResponse\s*=\s*({.+?});(?:\s*var|\s*<\/script|\s*$)/s);
+            if (m && m[1]) {
+              const resp = JSON.parse(m[1]);
+              const sd = resp.streamingData;
+              if (sd && sd.adaptiveFormats) {
+                let bestAudioBytes = 0;
+                const audioFormats = sd.adaptiveFormats.filter(f => f.mimeType && f.mimeType.startsWith('audio/'));
+                for (const a of audioFormats) {
+                  const sz = parseInt(a.contentLength, 10) || (a.approxDurationMs && a.bitrate ? Math.round(a.bitrate * parseInt(a.approxDurationMs, 10) / 8000) : 0);
+                  if (sz > bestAudioBytes) bestAudioBytes = sz;
+                }
+
+                const videoMap = new Map();
+                for (const f of sd.adaptiveFormats) {
+                  if (!f.mimeType || !f.mimeType.startsWith('video/') || !f.height) continue;
+                  const h = f.height;
+                  const fSize = parseInt(f.contentLength, 10) || (f.approxDurationMs && f.bitrate ? Math.round(f.bitrate * parseInt(f.approxDurationMs, 10) / 8000) : 0);
+                  const existing = videoMap.get(h);
+                  const exSize = existing ? (parseInt(existing.contentLength, 10) || 0) : 0;
+                  if (!existing || (f.mimeType.includes('mp4') && !existing.mimeType.includes('mp4')) || fSize > exSize) {
+                    videoMap.set(h, f);
+                  }
+                }
+
+                const getMeta = (h) => {
+                  if (h >= 4320) return { badge: '8K', label: '8K Ultra HD (MP4)' };
+                  if (h >= 2160) return { badge: '4K', label: '4K Ultra HD (MP4)' };
+                  if (h >= 1440) return { badge: '2K', label: '2K Quad HD (MP4)' };
+                  if (h >= 1080) return { badge: '1080p', label: 'Full HD Video (MP4)' };
+                  if (h >= 720) return { badge: '720p', label: 'HD Video (MP4)' };
+                  if (h >= 480) return { badge: '480p', label: 'Standard Video (MP4)' };
+                  if (h >= 360) return { badge: '360p', label: 'Medium Video (MP4)' };
+                  if (h >= 240) return { badge: '240p', label: 'Small Video (MP4)' };
+                  return { badge: `${h}p`, label: `${h}p Video (MP4)` };
+                };
+
+                const sortedHeights = Array.from(videoMap.keys()).sort((a, b) => b - a);
+                const formats = [];
+                for (const h of sortedHeights) {
+                  const f = videoMap.get(h);
+                  const meta = getMeta(h);
+                  let totalBytes = parseInt(f.contentLength, 10) || (f.approxDurationMs && f.bitrate ? Math.round(f.bitrate * parseInt(f.approxDurationMs, 10) / 8000) : 0);
+                  if (totalBytes > 0) totalBytes += bestAudioBytes;
+                  formats.push({
+                    quality: `${h}p`,
+                    height: h,
+                    badge: meta.badge,
+                    label: meta.label,
+                    format: 'mp4',
+                    size: totalBytes,
+                    sizeFormatted: formatBytes(totalBytes)
+                  });
+                }
+
+                formats.push({
+                  quality: 'audio',
+                  height: 0,
+                  badge: 'AUDIO',
+                  label: 'Extract Audio (MP3)',
+                  format: 'mp3',
+                  size: bestAudioBytes,
+                  sizeFormatted: formatBytes(bestAudioBytes),
+                  isAudio: true
+                });
+
+                return formats;
+              }
+            }
+          }
+        }
+      } catch (e) {}
+      return null;
     };
 
-    const dur = getDuration();
+    let probedFormatsCache = null;
+    const fetchProbedFormats = (videoUrl, callback) => {
+      if (probedFormatsCache) return callback(probedFormatsCache);
+      fetch(`http://127.0.0.1:45731/api/probe?url=${encodeURIComponent(videoUrl)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.formats && data.formats.length > 0) {
+            probedFormatsCache = data.formats;
+            callback(probedFormatsCache);
+          }
+        })
+        .catch(() => {});
+    };
 
     panel = document.createElement('div');
     panel.id = 'panda-idm-video-panel';
@@ -186,34 +270,11 @@
       </div>
       <div class="panda-idm-menu" id="panda-dropdown-menu">
         <div id="panda-streams-container"></div>
-        <div class="panda-menu-title">${isVideoPortal ? 'Select Quality / Format:' : 'Download Options:'}</div>
-        ${!isAudio ? `
-        <div class="panda-menu-item" data-quality="1080p" data-format="mp4">
-          <span class="badge-res">1080p</span>
-          <span class="item-name">Full HD Video (MP4)</span>
-          <span class="item-size" data-size-quality="1080p">${getEstimatedSize('1080p', dur)}</span>
-        </div>
-        <div class="panda-menu-item" data-quality="720p" data-format="mp4">
-          <span class="badge-res">720p</span>
-          <span class="item-name">HD Video (MP4)</span>
-          <span class="item-size" data-size-quality="720p">${getEstimatedSize('720p', dur)}</span>
-        </div>
-        <div class="panda-menu-item" data-quality="480p" data-format="mp4">
-          <span class="badge-res">480p</span>
-          <span class="item-name">Standard Video (MP4)</span>
-          <span class="item-size" data-size-quality="480p">${getEstimatedSize('480p', dur)}</span>
-        </div>
-        <div class="panda-menu-item" data-quality="360p" data-format="mp4">
-          <span class="badge-res">360p</span>
-          <span class="item-name">Low Bitrate (MP4)</span>
-          <span class="item-size" data-size-quality="360p">${getEstimatedSize('360p', dur)}</span>
-        </div>
-        <div class="panda-menu-divider"></div>
-        ` : ''}
-        <div class="panda-menu-item" data-quality="audio" data-format="mp3">
-          <span class="badge-res audio">AUDIO</span>
-          <span class="item-name">Extract Audio (MP3)</span>
-          <span class="item-size audio" data-size-quality="audio">${getEstimatedSize('audio', dur)}</span>
+        <div class="panda-menu-title">${isVideoPortal ? 'Available Formats & Sizes:' : 'Download Options:'}</div>
+        <div id="panda-formats-container">
+          <div class="panda-menu-loading">
+            <span style="font-size: 13px;">⏳</span> Detecting all available formats...
+          </div>
         </div>
       </div>
     `;
@@ -236,28 +297,53 @@
     const triggerBtn = panel.querySelector('#panda-trigger-btn');
     const dropdown = panel.querySelector('#panda-dropdown-menu');
     const streamsContainer = panel.querySelector('#panda-streams-container');
+    const formatsContainer = panel.querySelector('#panda-formats-container');
 
-    // Populate intercepted network streams from background sniffer
+    const renderFormatsList = (formats) => {
+      if (!formats || formats.length === 0) return;
+      const html = formats.map(f => `
+        <div class="panda-menu-item panda-format-option" data-quality="${f.quality}" data-format="${f.format || 'mp4'}">
+          <span class="badge-res ${f.isAudio ? 'audio' : ''}">${f.badge}</span>
+          <span class="item-name">${f.label}</span>
+          ${f.sizeFormatted ? `<span class="item-size ${f.isAudio ? 'audio' : ''}">${f.sizeFormatted}</span>` : ''}
+        </div>
+      `).join('');
+
+      formatsContainer.innerHTML = html;
+
+      formatsContainer.querySelectorAll('.panda-format-option').forEach(item => {
+        item.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const quality = item.getAttribute('data-quality');
+          const format = item.getAttribute('data-format');
+          dropdown.classList.remove('show');
+          await executeDownload(mediaInfo, quality, format, triggerBtn);
+        });
+      });
+    };
+
+    // Populate intercepted network streams with real formatted byte sizes
     const renderStreamsList = (streams) => {
       if (!streams || streams.length === 0) {
         streamsContainer.innerHTML = '';
         return;
       }
-      const itemsHtml = streams.slice(0, 6).map((s, idx) => {
+      const itemsHtml = streams.slice(0, 8).map((s) => {
         const isHls = s.url.includes('.m3u8') || s.contentType.includes('mpegurl');
         const badge = isHls ? 'HLS' : (s.contentType.includes('audio') ? 'AUDIO' : 'STREAM');
         const shortName = s.filename.length > 22 ? s.filename.substring(0, 20) + '...' : s.filename;
+        const sizeDisplay = s.size > 0 ? formatBytes(s.size) : (isHls ? 'Adaptive HLS' : 'Stream');
         return `
           <div class="panda-menu-item panda-stream-option" data-stream-url="${encodeURIComponent(s.url)}" data-stream-name="${encodeURIComponent(s.filename)}">
             <span class="badge-res ${badge.toLowerCase()}">${badge}</span>
             <span class="item-name" title="${s.filename}">${shortName}</span>
-            <span class="item-size">Captured</span>
+            <span class="item-size ${badge.toLowerCase()}">${sizeDisplay}</span>
           </div>
         `;
       }).join('');
 
       streamsContainer.innerHTML = `
-        <div class="panda-menu-title" style="color: #10b981; font-weight: 700;">⚡ Detected Video Streams (${streams.length}):</div>
+        <div class="panda-menu-title" style="color: #10b981; font-weight: 700;">⚡ Detected Media Streams (${streams.length}):</div>
         ${itemsHtml}
         <div class="panda-menu-divider"></div>
       `;
@@ -274,8 +360,19 @@
       });
     };
 
-    // Initial stream render if already cached
+    // 1. Initial immediate formats from in-page YouTube response (0ms)
+    const inPageFormats = getYouTubeInPageFormats();
+    if (inPageFormats && inPageFormats.length > 0) {
+      renderFormatsList(inPageFormats);
+    }
+
+    // 2. Initial stream render if already cached
     renderStreamsList(cachedMediaStreams);
+
+    // 3. Background probe to get full backend verified formats & real sizes
+    fetchProbedFormats(currentVideoUrl, (freshFormats) => {
+      renderFormatsList(freshFormats);
+    });
 
     // Toggle dropdown & fetch fresh media list
     triggerBtn.addEventListener('click', (e) => {
@@ -284,22 +381,14 @@
       fetchTabMedia((freshStreams) => {
         renderStreamsList(freshStreams);
       });
+      fetchProbedFormats(currentVideoUrl, (freshFormats) => {
+        renderFormatsList(freshFormats);
+      });
       dropdown.classList.toggle('show');
     });
 
     document.addEventListener('click', () => {
       dropdown.classList.remove('show');
-    });
-
-    // Handle standard quality clicks
-    panel.querySelectorAll('.panda-menu-item:not(.panda-stream-option)').forEach(item => {
-      item.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const quality = item.getAttribute('data-quality');
-        const format = item.getAttribute('data-format');
-        dropdown.classList.remove('show');
-        await executeDownload(mediaInfo, quality, format, triggerBtn);
-      });
     });
   }
 
