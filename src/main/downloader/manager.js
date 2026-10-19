@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
+const { app } = require('electron');
 const { DownloadTask } = require('./engine');
 const { VideoDownloadTask, isVideoPortalUrl } = require('./videoEngine');
 const settingsManager = require('../settings');
@@ -8,10 +9,11 @@ const settingsManager = require('../settings');
 class DownloadManager extends EventEmitter {
   constructor(options = {}) {
     super();
-    this.historyFile = options.historyFile || path.join(
-      process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Downloads', 'PandaDownloads') : process.cwd(),
-      'download_history.json'
-    );
+    const userDataDir = options.userDataDir || (app ? app.getPath('userData') : path.join(process.env.APPDATA || process.cwd(), 'panda-downloader'));
+    if (!fs.existsSync(userDataDir)) {
+      try { fs.mkdirSync(userDataDir, { recursive: true }); } catch (e) {}
+    }
+    this.historyFile = options.historyFile || path.join(userDataDir, 'download_history.json');
 
     this.tasks = new Map(); // id -> DownloadTask
     this.history = [];      // Completed or cancelled tasks
@@ -28,10 +30,32 @@ class DownloadManager extends EventEmitter {
       if (fs.existsSync(this.historyFile)) {
         const raw = fs.readFileSync(this.historyFile, 'utf-8');
         this.history = JSON.parse(raw);
+      } else {
+        // Auto-migrate legacy file if present in user's downloads folder
+        const legacyFile = path.join(
+          process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Downloads', 'PandaDownloads') : process.cwd(),
+          'download_history.json'
+        );
+        if (fs.existsSync(legacyFile)) {
+          const raw = fs.readFileSync(legacyFile, 'utf-8');
+          this.history = JSON.parse(raw);
+          this._saveHistory();
+        }
       }
     } catch (e) {
       this.history = [];
     }
+
+    // Always remove legacy history file from user's downloads folder to keep it clean
+    try {
+      const legacyFile = path.join(
+        process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Downloads', 'PandaDownloads') : process.cwd(),
+        'download_history.json'
+      );
+      if (fs.existsSync(legacyFile)) {
+        fs.unlinkSync(legacyFile);
+      }
+    } catch (e) {}
   }
 
   _saveHistory() {
