@@ -16,42 +16,129 @@ const MEDIA_MIME_PATTERNS = [
   /application\/octet-stream/i
 ];
 
-const MEDIA_EXTENSIONS = /\.(mp4|webm|mkv|flv|avi|mov|wmv|ts|m4v|mp3|m4a|aac|wav|ogg|flac|opus|m3u8|mpd|zip|rar|7z|tar|gz|bz2|iso|xz|exe|msi|apk|dmg|pkg|pdf)(\?.*)?$/i;
+// Broad list of downloadable extensions intercepted from browser
+const DOWNLOAD_EXTENSIONS = /\.(mp4|webm|mkv|flv|avi|mov|wmv|ts|m4v|mp3|m4a|aac|wav|ogg|flac|opus|m3u8|mpd|zip|rar|7z|tar|gz|bz2|iso|xz|exe|msi|apk|dmg|pkg|deb|rpm|bin|img|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|rtf|torrent|cab|msix|appx)(\?.*)?$/i;
+const WEB_PAGE_EXTENSIONS = /\.(html?|php|aspx?|jsp|css|js|json)(\?.*)?$/i;
 
-// Auto-intercept Chrome native downloads for accelerated multi-segment downloading
-if (chrome.downloads && chrome.downloads.onCreated) {
-  chrome.downloads.onCreated.addListener(async (downloadItem) => {
-    if (!downloadItem || !downloadItem.url || downloadItem.url.startsWith('blob:') || downloadItem.url.startsWith('data:')) {
-      return;
+// Registry of already intercepted download IDs to prevent duplicate calls
+const interceptedIds = new Set();
+
+async function handleDownloadItem(downloadItem, suggest) {
+  if (!downloadItem || !downloadItem.url) {
+    if (suggest) suggest();
+    return;
+  }
+
+  const url = downloadItem.finalUrl || downloadItem.url;
+  if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('chrome:') || url.startsWith('chrome-extension:')) {
+    if (suggest) suggest();
+    return;
+  }
+
+  if (interceptedIds.has(downloadItem.id)) {
+    if (suggest) suggest();
+    return;
+  }
+
+  const filename = downloadItem.filename ? downloadItem.filename.split(/[\/\\]/).pop() : '';
+
+  // Exclude ordinary web page visits
+  if (WEB_PAGE_EXTENSIONS.test(filename || url) && (!downloadItem.mime || downloadItem.mime === 'text/html')) {
+    if (suggest) suggest();
+    return;
+  }
+
+  // Intercept if matches downloadable file extensions, binary mime, or explicit download
+  const isExtensionMatch = DOWNLOAD_EXTENSIONS.test(url) || (filename && DOWNLOAD_EXTENSIONS.test(filename));
+  const isBinaryMime = downloadItem.mime && (
+    downloadItem.mime === 'application/octet-stream' ||
+    downloadItem.mime.startsWith('video/') ||
+    downloadItem.mime.startsWith('audio/') ||
+    downloadItem.mime.includes('zip') ||
+    downloadItem.mime.includes('compressed') ||
+    downloadItem.mime.includes('pdf') ||
+    downloadItem.mime.includes('binary')
+  );
+
+  // If filename has standard file extension (and not html), intercept it
+  const hasGenericFileExtension = filename && filename.includes('.') && !WEB_PAGE_EXTENSIONS.test(filename);
+
+  if (isExtensionMatch || isBinaryMime || hasGenericFileExtension) {
+    interceptedIds.add(downloadItem.id);
+    if (interceptedIds.size > 300) {
+      const first = interceptedIds.values().next().value;
+      interceptedIds.delete(first);
     }
 
-    const isMatch = MEDIA_EXTENSIONS.test(downloadItem.url) || MEDIA_EXTENSIONS.test(downloadItem.filename || '');
-    if (isMatch) {
-      try {
-        // Attempt to pass to Panda Downloader
-        const filename = downloadItem.filename ? downloadItem.filename.split(/[\/\\]/).pop() : '';
-        const payload = {
-          url: downloadItem.finalUrl || downloadItem.url,
-          filename: filename,
-          referrer: downloadItem.referrer || ''
-        };
+    try {
+      const payload = {
+        url: url,
+        filename: filename,
+        referrer: downloadItem.referrer || '',
+        fileSize: downloadItem.fileSize || 0
+      };
 
-        const res = await forwardDownloadToPanda(payload);
-        if (res && (res.success || res.taskId || res.promptShown)) {
-          // Successfully intercepted by Panda Downloader: cancel browser's slow single-thread download
-          chrome.downloads.cancel(downloadItem.id, () => {
-            if (chrome.runtime.lastError) {}
-          });
-          chrome.downloads.erase({ id: downloadItem.id }, () => {
-            if (chrome.runtime.lastError) {}
-          });
-        }
-      } catch (err) {
-        // Desktop app not running, browser handles download naturally
+      const res = await forwardDownloadToPanda(payload);
+      if (res && (res.success || res.taskId || res.promptShown)) {
+        // Intercepted by Panda Downloader: cancel slow browser downloader
+        chrome.downloads.cancel(downloadItem.id, () => {
+          if (chrome.runtime.lastError) {}
+        });
+        chrome.downloads.erase({ id: downloadItem.id }, () => {
+          if (chrome.runtime.lastError) {}
+        });
+        return;
       }
+    } catch (err) {
+      // Panda Downloader desktop app not running; let browser handle download
+    }
+  }
+
+  if (suggest) suggest();
+}
+
+// Intercept downloads via onCreated and onDeterminingFilename
+if (chrome.downloads) {
+  if (chrome.downloads.onCreated) {
+    chrome.downloads.onCreated.addListener((downloadItem) => {
+      handleDownloadItem(downloadItem, null);
+    });
+  }
+
+  if (chrome.downloads.onDeterminingFilename) {
+    chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+      handleDownloadItem(downloadItem, suggest);
+      return true; // Asynchronous suggestion response
+    });
+  }
+}
+
+// Context Menu: "Download with Panda Downloader"
+try {
+  chrome.runtime.onInstalled.addListener(() => {
+    if (chrome.contextMenus) {
+      chrome.contextMenus.create({
+        id: 'panda-download-item',
+        title: 'Download with Panda Downloader',
+        contexts: ['link', 'image', 'video', 'audio']
+      }, () => {
+        if (chrome.runtime.lastError) {}
+      });
     }
   });
-}
+
+  if (chrome.contextMenus && chrome.contextMenus.onClicked) {
+    chrome.contextMenus.onClicked.addListener((info, tab) => {
+      const targetUrl = info.linkUrl || info.srcUrl;
+      if (targetUrl) {
+        forwardDownloadToPanda({
+          url: targetUrl,
+          referrer: tab ? tab.url : ''
+        }).catch(() => {});
+      }
+    });
+  }
+} catch (e) {}
 
 // Sniff network responses for video, audio, and large download streams
 chrome.webRequest.onHeadersReceived.addListener(

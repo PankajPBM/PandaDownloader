@@ -408,15 +408,17 @@ export default function App() {
       segments: Array.from({ length: 16 }, (_, i) => ({ id: i, percent: 0, status: 'downloading' }))
     };
 
+    const isDone = task.status === 'completed';
+
     return (
-      <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 16, background: 'var(--bg-secondary)', color: 'var(--text-main)', userSelect: 'none', border: '1px solid var(--border-focus)', borderRadius: 10, boxSizing: 'border-box' }}>
+      <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 14, background: 'var(--bg-secondary)', color: 'var(--text-main)', userSelect: 'none', border: '1px solid var(--border-focus)', borderRadius: 10, boxSizing: 'border-box', overflow: 'hidden' }}>
         {/* Draggable Titlebar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid var(--border-subtle)', WebkitAppRegion: 'drag' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--border-subtle)', WebkitAppRegion: 'drag', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 20 }}>⚡</span>
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)', maxWidth: 440, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                Download Status: {task.filename || 'File'}
+                {isDone ? `Download Complete: ${task.filename || 'File'}` : `Download Status: ${task.filename || 'File'}`}
               </div>
               <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Dynamic Range Segmentation Engine</div>
             </div>
@@ -432,12 +434,12 @@ export default function App() {
         </div>
 
         {/* Grid info */}
-        <div className="idm-grid" style={{ marginTop: 12 }}>
+        <div className="idm-grid" style={{ marginTop: 10 }}>
           <span className="idm-grid-label">File Name:</span>
           <span className="idm-grid-value" title={task.filename} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.filename || task.url}</span>
 
           <span className="idm-grid-label">Status:</span>
-          <span className="idm-grid-value" style={{ textTransform: 'capitalize', color: task.status === 'downloading' || task.status === 'completed' ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+          <span className="idm-grid-value" style={{ textTransform: 'capitalize', color: isDone ? '#10b981' : task.status === 'downloading' ? '#06b6d4' : '#f59e0b', fontWeight: 700 }}>
             {task.status}
           </span>
 
@@ -453,7 +455,7 @@ export default function App() {
           </span>
 
           <span className="idm-grid-label">Time Left (ETA):</span>
-          <span className="idm-grid-value">{formatETA(task.eta)}</span>
+          <span className="idm-grid-value">{isDone ? '--' : formatETA(task.eta)}</span>
 
           <span className="idm-grid-label">Resume Capability:</span>
           <span className="idm-grid-value" style={{ color: task.supportsRange ? '#10b981' : '#f59e0b' }}>
@@ -469,7 +471,7 @@ export default function App() {
         </div>
 
         {/* Master Shimmer Progress Bar */}
-        <div className="idm-shimmer-track" style={{ margin: '10px 0' }}>
+        <div className="idm-shimmer-track" style={{ margin: '8px 0' }}>
           <div 
             className="idm-shimmer-fill" 
             style={{ width: `${Math.min(100, task.percent || 0)}%` }}
@@ -479,31 +481,40 @@ export default function App() {
           </div>
         </div>
 
-        {/* Active Connections Dynamic Streams (16 Threads) */}
+        {/* Active Connections Dynamic Streams (2-column IDM style) */}
         {task.segments && task.segments.length > 0 && (
-          <div className="idm-segments-panel" style={{ flex: 1, overflowY: 'auto', maxHeight: 150, padding: 8, borderRadius: 6, margin: '6px 0' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
-              Active Segment Streams ({task.segments.length} Threads)
+          <div className="idm-segments-panel" style={{ padding: '6px 10px', borderRadius: 8, margin: '4px 0', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
+                Active Segment Streams ({task.segments.length} Threads)
+              </span>
+              <span style={{ fontSize: 10, color: '#10b981', fontWeight: 600 }}>
+                {isDone ? 'All Segments Merged & Verified' : 'Dynamic Range Chunking'}
+              </span>
             </div>
-            {task.segments.map((seg, idx) => (
-              <div key={idx} className="idm-segment-row" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0' }}>
-                <span style={{ width: 55, color: 'var(--text-muted)', fontSize: 11 }}>Conn {idx + 1}:</span>
-                <div className="idm-segment-bar" style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                  <div className="idm-segment-fill" style={{ width: `${Math.min(100, seg.percent || 0)}%`, height: '100%', background: '#10b981' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 14, rowGap: 2 }}>
+              {task.segments.map((seg, idx) => (
+                <div key={idx} className="idm-segment-row" style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '1px 0' }}>
+                  <span style={{ width: 46, color: 'var(--text-muted)', fontSize: 10, flexShrink: 0 }}>Conn {idx + 1}:</span>
+                  <div className="idm-segment-bar" style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                    <div className="idm-segment-fill" style={{ width: `${Math.min(100, isDone ? 100 : (seg.percent || 0))}%`, height: '100%', background: '#10b981' }} />
+                  </div>
+                  <span style={{ width: 34, textAlign: 'right', color: 'var(--text-main)', fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
+                    {Math.floor(isDone ? 100 : (seg.percent || 0))}%
+                  </span>
                 </div>
-                <span style={{ width: 40, textAlign: 'right', color: 'var(--text-main)', fontSize: 11 }}>{Math.floor(seg.percent || 0)}%</span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
         {/* Action Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, marginTop: 'auto', borderTop: '1px solid var(--border-subtle)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, marginTop: 'auto', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            {task.status === 'completed' ? (
+            {isDone ? (
               <>
                 {task.filePath && (
-                  <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => {
+                  <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => {
                     handleOpenFile(task.filePath);
                     window.pandaAPI && window.pandaAPI.closeStatusWindow();
                   }}>
@@ -512,26 +523,26 @@ export default function App() {
                   </button>
                 )}
                 {task.filePath && (
-                  <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => handleOpenFolder(task.filePath)}>
+                  <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => handleOpenFolder(task.filePath)}>
                     <Folder size={14} />
                     <span>Open Folder</span>
                   </button>
                 )}
               </>
             ) : task.status === 'downloading' ? (
-              <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => handlePause(task.id)}>
+              <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => handlePause(task.id)}>
                 <Pause size={14} />
                 <span>Pause</span>
               </button>
             ) : (
-              <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => handleResume(task.id)}>
+              <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => handleResume(task.id)}>
                 <Play size={14} />
                 <span>Resume</span>
               </button>
             )}
 
-            {task.filePath && task.status !== 'completed' && (
-              <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => handleOpenFolder(task.filePath)}>
+            {task.filePath && !isDone && (
+              <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => handleOpenFolder(task.filePath)}>
                 <Folder size={14} />
                 <span>Open Folder</span>
               </button>
@@ -539,18 +550,18 @@ export default function App() {
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => window.pandaAPI && window.pandaAPI.closeStatusWindow()}>
-              {task.status === 'completed' ? 'Close' : 'Hide to Background'}
+            <button className="btn-secondary" style={{ padding: '6px 16px', fontSize: 12 }} onClick={() => window.pandaAPI && window.pandaAPI.closeStatusWindow()}>
+              {isDone ? 'Close' : 'Hide to Background'}
             </button>
-            {task.status !== 'completed' && (
-              <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12, color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.3)' }} onClick={async () => {
+            {!isDone && (
+              <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12, color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.3)' }} onClick={async () => {
                 if (window.pandaAPI) {
                   await window.pandaAPI.deleteTask(task.id, true);
                   window.pandaAPI.closeStatusWindow();
                 }
               }}>
                 <Trash2 size={14} />
-                <span>Cancel & Delete</span>
+                <span>Cancel</span>
               </button>
             )}
           </div>

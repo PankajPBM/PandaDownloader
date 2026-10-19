@@ -15,7 +15,8 @@
     "storage",
     "tabs",
     "activeTab",
-    "downloads"
+    "downloads",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"

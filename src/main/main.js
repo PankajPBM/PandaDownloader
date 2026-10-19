@@ -35,10 +35,11 @@ function showDownloadStatusWindow(taskId) {
 
   const iconPath = path.join(__dirname, '../../assets/icon.png');
   statusWindow = new BrowserWindow({
-    width: 620,
-    height: 580,
-    minWidth: 540,
-    minHeight: 480,
+    width: 650,
+    height: 610,
+    minWidth: 560,
+    minHeight: 520,
+    useContentSize: true,
     resizable: true,
     maximizable: false,
     minimizable: true,
