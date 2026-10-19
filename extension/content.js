@@ -6,12 +6,13 @@
   let activePanel = null;
   let lastUrl = window.location.href;
 
-  function findActiveMediaContainer() {
+  function findActiveMediaElement() {
     // 1. YouTube specific player detection
     if (window.location.hostname.includes('youtube.com')) {
       const ytPlayer = document.querySelector('#movie_player') || 
                        document.querySelector('.html5-video-player') || 
-                       document.querySelector('ytd-player');
+                       document.querySelector('ytd-player') ||
+                       document.querySelector('#player-container');
       const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
       if (ytPlayer && video) {
         return { container: ytPlayer, element: video, type: 'video' };
@@ -24,7 +25,8 @@
     // 2. Generic HTML5 video players on any website
     const videos = Array.from(document.querySelectorAll('video')).filter(v => {
       const r = v.getBoundingClientRect();
-      return r.width > 120 && r.height > 80 && window.getComputedStyle(v).display !== 'none';
+      const style = window.getComputedStyle(v);
+      return (r.width > 80 || v.videoWidth > 80) && style.display !== 'none' && style.visibility !== 'hidden';
     });
 
     const activeVideo = videos.find(v => !v.paused && !v.ended) || videos[0];
@@ -51,14 +53,15 @@
 
     return null;
   }
+  const findActiveMediaContainer = findActiveMediaElement;
 
   function injectIdmFloatingPanel(mediaInfo) {
     if (!mediaInfo || !mediaInfo.container) return;
 
     let panel = document.getElementById('panda-idm-video-panel');
     if (panel) {
-      // If panel is already inside the current container, just make sure it's visible
-      if (panel.parentElement === mediaInfo.container) {
+      // If panel is already inside the current container and connected to DOM, just make sure it's visible
+      if (panel.parentElement === mediaInfo.container && document.body.contains(panel)) {
         panel.style.display = 'flex';
         return;
       }
@@ -119,7 +122,7 @@
     panel.className = 'panda-idm-panel';
     panel.innerHTML = `
       <div class="panda-idm-header" id="panda-trigger-btn" title="Download media with Panda Downloader">
-        <img src="${logoUrl}" style="width: 16px; height: 16px; border-radius: 3px; object-fit: contain; vertical-align: middle;" alt="Panda">
+        <span style="font-size: 15px; line-height: 1; margin-right: 2px;">🐼</span>
         <span class="panda-idm-label">${label}</span>
         <span class="panda-idm-arrow">▼</span>
       </div>
@@ -294,26 +297,51 @@
 
   // Periodic scan to inject/reposition on SPA navigation and video changes
   function checkAndInject() {
-    const media = findActiveMediaElement();
-    if (media) {
-      injectIdmFloatingPanel(media);
+    try {
+      const media = findActiveMediaElement();
+      if (media) {
+        injectIdmFloatingPanel(media);
+      }
+    } catch (e) {
+      console.warn('[Panda Downloader] injection error:', e);
     }
   }
+
+  // Real-time MutationObserver to inject as soon as video DOM element appears
+  try {
+    const observer = new MutationObserver(() => {
+      const video = document.querySelector('video');
+      const panel = document.getElementById('panda-idm-video-panel');
+      if (video && (!panel || !document.body.contains(panel))) {
+        checkAndInject();
+      }
+    });
+    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+  } catch (e) {}
 
   // Monitor SPA URL changes (YouTube playlist, history navigation)
   setInterval(() => {
     if (window.location.href !== lastUrl) {
       lastUrl = window.location.href;
-      setTimeout(checkAndInject, 500);
+      setTimeout(checkAndInject, 300);
+      setTimeout(checkAndInject, 800);
     } else {
       checkAndInject();
     }
   }, 1000);
 
   // Hook into YouTube navigation events
-  window.addEventListener('yt-navigate-finish', () => setTimeout(checkAndInject, 500));
-  window.addEventListener('yt-page-data-updated', () => setTimeout(checkAndInject, 500));
-  window.addEventListener('popstate', () => setTimeout(checkAndInject, 500));
+  window.addEventListener('yt-navigate-finish', () => {
+    setTimeout(checkAndInject, 200);
+    setTimeout(checkAndInject, 800);
+  });
+  window.addEventListener('yt-page-data-updated', () => {
+    setTimeout(checkAndInject, 200);
+    setTimeout(checkAndInject, 800);
+  });
+  window.addEventListener('popstate', () => {
+    setTimeout(checkAndInject, 300);
+  });
 
   // Initial scan
   if (document.readyState === 'loading') {
