@@ -116,13 +116,6 @@ chrome.webRequest.onHeadersReceived.addListener(
             if (chrome.runtime.lastError) {}
           });
         } catch (e) {}
-
-        // Notify content script safely without creating unchecked lastError
-        chrome.tabs.sendMessage(details.tabId, { action: 'MEDIA_DETECTED', media: mediaItem }, () => {
-          if (chrome.runtime.lastError) {
-            // Normal when tab hasn't loaded content script yet
-          }
-        });
       }
     }
   },

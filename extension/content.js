@@ -1,6 +1,24 @@
 // Panda Downloader - Universal IDM-Style Video & Audio Sniffer Content Script
 
 (function() {
+  // Only inject into the top-level webpage, ignoring ad and tracker iframes
+  try {
+    if (window.top !== window.self) return;
+  } catch (e) {
+    return;
+  }
+
+  // Intercept and suppress any stray extension context invalidation errors
+  try {
+    window.addEventListener('error', (e) => {
+      if (e && e.message && (e.message.includes('Extension context invalidated') || e.message.includes('context invalidated'))) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return true;
+      }
+    }, true);
+  } catch (e) {}
+
   const PORTAL_DOMAINS = /youtube\.com|youtu\.be|vimeo\.com|tiktok\.com|dailymotion\.com|facebook\.com|instagram\.com|x\.com|twitter\.com|twitch\.tv|bilibili\.com/i;
   const isVideoPortal = PORTAL_DOMAINS.test(window.location.hostname);
   let activePanel = null;
