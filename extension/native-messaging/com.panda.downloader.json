@@ -1,0 +1,9 @@
+{
+  "name": "com.panda.downloader",
+  "description": "Panda Downloader Native Messaging Host",
+  "path": "host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://*/*"
+  ]
+}

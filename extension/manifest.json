@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Panda Downloader Integration Module",
+  "version": "1.0.0",
+  "description": "Automatically detect and capture high-speed video, audio, and file downloads directly with Panda Downloader.",
+  "permissions": [
+    "webRequest",
+    "nativeMessaging",
+    "storage",
+    "tabs",
+    "activeTab",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Panda Downloader Media Sniffer",
+    "default_popup": "popup/popup.html"
+  }
+}

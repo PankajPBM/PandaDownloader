@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PandaDownloader.App/PandaDownloader.App.csproj" />
+    <Project Path="src/PandaDownloader.Core/PandaDownloader.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PandaDownloader.Tests/PandaDownloader.Tests.csproj" />
+  </Folder>
+</Solution>

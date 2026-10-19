@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Panda Downloader</title>
+  <style>
+    body {
+      width: 360px;
+      margin: 0;
+      padding: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0b0f19;
+      color: #e2e8f0;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 15px;
+      color: #10b981;
+    }
+    .status-badge {
+      font-size: 11px;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      padding: 3px 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .media-list {
+      max-height: 280px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 24px 8px;
+      color: #64748b;
+      font-size: 13px;
+    }
+    .media-item {
+      background: #141c2e;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      transition: border-color 0.2s;
+    }
+    .media-item:hover {
+      border-color: #10b981;
+    }
+    .media-info {
+      flex: 1;
+      overflow: hidden;
+    }
+    .media-title {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #f1f5f9;
+    }
+    .media-meta {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 3px;
+    }
+    .download-btn {
+      background: #10b981;
+      color: #0b0f19;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.2s;
+    }
+    .download-btn:hover {
+      background: #059669;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <span>🐼</span>
+      <span>Panda Downloader</span>
+    </div>
+    <div class="status-badge" id="media-count">0 Detected</div>
+  </div>
+
+  <div class="media-list" id="list">
+    <div class="empty-state">No media streams detected yet.<br>Play a video or audio to capture it.</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

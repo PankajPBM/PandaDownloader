@@ -1,0 +1,31 @@
+# Node & Electron dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+dist/
+release/
+installer/Output/
+
+# .NET artifacts
+.vs/
+**/bin/Debug/
+**/bin/Release/
+**/obj/
+*.user
+*.suo
+
+# Local user data and temporary downloads
+downloads/
+tests/temp_downloads/
+download_history.json
+userData/
+*.log
+
+# OS generated files
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+.DS_Store
