@@ -18,10 +18,24 @@ export default function App() {
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [activePopupTaskId, setActivePopupTaskId] = useState(null);
   const [completionTask, setCompletionTask] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleteFileFromDisk, setDeleteFileFromDisk] = useState(false);
+
+  // Sync theme with document root & body
+  useEffect(() => {
+    try {
+      document.documentElement.setAttribute('data-theme', theme);
+      if (document.body) {
+        document.body.setAttribute('data-theme', theme);
+        document.body.style.backgroundColor = theme === 'light' ? '#f1f5f9' : '#070a12';
+        document.body.style.color = theme === 'light' ? '#0f172a' : '#f8fafc';
+      }
+      localStorage.setItem('panda_theme', theme);
+    } catch (e) {}
+  }, [theme]);
 
   // Derive popup task directly from active tasks or completion task to guarantee 100% sync
   const activePopupTask = tasks.find(t => t.id === activePopupTaskId) || 
@@ -31,7 +45,6 @@ export default function App() {
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
-    localStorage.setItem('panda_theme', next);
   };
 
   const handleOpenLink = (url) => {
@@ -397,16 +410,16 @@ export default function App() {
     };
 
     return (
-      <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 14, background: '#070a12', color: '#f8fafc', userSelect: 'none', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: 10, boxSizing: 'border-box' }}>
+      <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 14, background: 'var(--bg-secondary)', color: 'var(--text-main)', userSelect: 'none', border: '1px solid var(--border-focus)', borderRadius: 10, boxSizing: 'border-box' }}>
         {/* Draggable Titlebar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.08)', WebkitAppRegion: 'drag' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid var(--border-subtle)', WebkitAppRegion: 'drag' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 18 }}>⚡</span>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', maxWidth: 440, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)', maxWidth: 440, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 Download Status: {task.filename || 'File'}
               </div>
-              <div style={{ fontSize: 10, color: '#94a3b8' }}>Dynamic Range Segmentation Engine</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Dynamic Range Segmentation Engine</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, WebkitAppRegion: 'no-drag' }}>
