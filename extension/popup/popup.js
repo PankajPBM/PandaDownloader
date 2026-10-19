@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const isVideoPortal = tab.url && /vimeo\.com|tiktok\.com|dailymotion\.com|facebook\.com|twitch\.tv/i.test(tab.url);
 
   chrome.runtime.sendMessage({ action: 'GET_TAB_MEDIA', tabId: tab.id }, (response) => {
+    if (chrome.runtime.lastError) {
+      response = { media: [] };
+    }
     const listEl = document.getElementById('list');
     const countEl = document.getElementById('media-count');
 
@@ -136,6 +139,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           }
         }, (res) => {
+          if (chrome.runtime.lastError) {
+            btn.textContent = 'Failed';
+            alert('Make sure Panda Downloader desktop app is running!');
+            btn.disabled = false;
+            return;
+          }
           if (res && res.success) {
             btn.textContent = '✓ Added!';
             btn.style.background = '#059669';

@@ -7,6 +7,7 @@
   let lastUrl = window.location.href;
 
   function findActiveMediaElement() {
+    const root = document.body || document.documentElement;
     // 1. YouTube specific player detection
     if (window.location.hostname.includes('youtube.com')) {
       const ytPlayer = document.querySelector('#movie_player') || 
@@ -18,7 +19,7 @@
         return { container: ytPlayer, element: video, type: 'video' };
       }
       if (video) {
-        return { container: video.parentElement || document.body, element: video, type: 'video' };
+        return { container: video.parentElement || root, element: video, type: 'video' };
       }
     }
 
@@ -32,7 +33,7 @@
     const activeVideo = videos.find(v => !v.paused && !v.ended) || videos[0];
     if (activeVideo) {
       return { 
-        container: activeVideo.parentElement || document.body, 
+        container: activeVideo.parentElement || root, 
         element: activeVideo, 
         type: 'video' 
       };
@@ -45,7 +46,7 @@
     const activeAudio = audios.find(a => !a.paused && !a.ended) || audios[0];
     if (activeAudio) {
       return { 
-        container: activeAudio.parentElement || document.body, 
+        container: activeAudio.parentElement || root, 
         element: activeAudio, 
         type: 'audio' 
       };
@@ -57,11 +58,12 @@
 
   function injectIdmFloatingPanel(mediaInfo) {
     if (!mediaInfo || !mediaInfo.container) return;
+    const root = document.body || document.documentElement;
 
     let panel = document.getElementById('panda-idm-video-panel');
     if (panel) {
       // If panel is already inside the current container and connected to DOM, just make sure it's visible
-      if (panel.parentElement === mediaInfo.container && document.body.contains(panel)) {
+      if (panel.parentElement === mediaInfo.container && root && root.contains(panel)) {
         panel.style.display = 'flex';
         return;
       }
@@ -252,7 +254,13 @@
       if (!targetUrl || targetUrl.startsWith('blob:') || targetUrl.startsWith('data:')) {
         try {
           const resp = await new Promise(res => {
-            chrome.runtime.sendMessage({ action: 'GET_TAB_MEDIA' }, res);
+            chrome.runtime.sendMessage({ action: 'GET_TAB_MEDIA' }, (r) => {
+              if (chrome.runtime.lastError) {
+                res(null);
+                return;
+              }
+              res(r);
+            });
           });
           if (resp && resp.media && resp.media.length > 0) {
             const match = resp.media.find(m => mediaInfo.type === 'audio' ? m.contentType.includes('audio') : (m.contentType.includes('video') || m.url.includes('.mp4') || m.url.includes('.m3u8'))) || resp.media[0];
@@ -280,28 +288,38 @@
       }
     }
 
-    chrome.runtime.sendMessage({
-      action: 'DOWNLOAD_WITH_PANDA',
-      payload: {
-        action: 'ADD_DOWNLOAD',
-        url: targetUrl,
-        filename: targetFilename,
-        quality: quality,
-        format: format,
-        headers: {
-          'Referer': window.location.href,
-          'User-Agent': navigator.userAgent
+    try {
+      chrome.runtime.sendMessage({
+        action: 'DOWNLOAD_WITH_PANDA',
+        payload: {
+          action: 'ADD_DOWNLOAD',
+          url: targetUrl,
+          filename: targetFilename,
+          quality: quality,
+          format: format,
+          headers: {
+            'Referer': window.location.href,
+            'User-Agent': navigator.userAgent
+          }
         }
-      }
-    }, (res) => {
-      if (res && res.success) {
-        btn.innerHTML = `<span style="color:#10b981; font-size:14px;">✓</span><span class="panda-idm-label" style="color:#10b981;">Added to Panda!</span>`;
-        setTimeout(() => { btn.innerHTML = originalText; }, 2500);
-      } else {
-        alert(res?.error || 'Make sure Panda Downloader desktop app is running!');
-        btn.innerHTML = originalText;
-      }
-    });
+      }, (res) => {
+        if (chrome.runtime.lastError) {
+          alert('Make sure Panda Downloader desktop app is running!');
+          btn.innerHTML = originalText;
+          return;
+        }
+        if (res && res.success) {
+          btn.innerHTML = `<span style="color:#10b981; font-size:14px;">✓</span><span class="panda-idm-label" style="color:#10b981;">Added to Panda!</span>`;
+          setTimeout(() => { btn.innerHTML = originalText; }, 2500);
+        } else {
+          alert(res?.error || 'Make sure Panda Downloader desktop app is running!');
+          btn.innerHTML = originalText;
+        }
+      });
+    } catch (e) {
+      alert('Make sure Panda Downloader desktop app is running!');
+      btn.innerHTML = originalText;
+    }
   }
 
   // Periodic scan to inject/reposition on SPA navigation and video changes
@@ -311,9 +329,7 @@
       if (media) {
         injectIdmFloatingPanel(media);
       }
-    } catch (e) {
-      console.warn('[Panda Downloader] injection error:', e);
-    }
+    } catch (e) {}
   }
 
   // Real-time MutationObserver to inject as soon as video DOM element appears
@@ -321,11 +337,26 @@
     const observer = new MutationObserver(() => {
       const video = document.querySelector('video');
       const panel = document.getElementById('panda-idm-video-panel');
-      if (video && (!panel || !document.body.contains(panel))) {
+      const root = document.body || document.documentElement;
+      if (video && (!panel || !root || !root.contains(panel))) {
         checkAndInject();
       }
     });
-    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+    const targetNode = document.documentElement || document.body;
+    if (targetNode) {
+      observer.observe(targetNode, { childList: true, subtree: true });
+    }
+  } catch (e) {}
+
+  // Listen for media detection signals from background worker
+  try {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg && msg.action === 'MEDIA_DETECTED') {
+        checkAndInject();
+        sendResponse({ ok: true });
+      }
+      return true;
+    });
   } catch (e) {}
 
   // Monitor SPA URL changes (YouTube playlist, history navigation)
@@ -360,3 +391,4 @@
   }
 
 })();
+

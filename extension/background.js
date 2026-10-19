@@ -39,11 +39,15 @@ if (chrome.downloads && chrome.downloads.onCreated) {
         const res = await forwardDownloadToPanda(payload);
         if (res && (res.success || res.taskId || res.promptShown)) {
           // Successfully intercepted by Panda Downloader: cancel browser's slow single-thread download
-          chrome.downloads.cancel(downloadItem.id).catch(() => {});
-          chrome.downloads.erase({ id: downloadItem.id }).catch(() => {});
+          chrome.downloads.cancel(downloadItem.id, () => {
+            if (chrome.runtime.lastError) {}
+          });
+          chrome.downloads.erase({ id: downloadItem.id }, () => {
+            if (chrome.runtime.lastError) {}
+          });
         }
       } catch (err) {
-        console.warn('[Panda Downloader] Daemon not reached, letting browser handle download:', err);
+        // Desktop app not running, browser handles download naturally
       }
     }
   });
@@ -103,12 +107,22 @@ chrome.webRequest.onHeadersReceived.addListener(
         mediaList.push(mediaItem);
         tabMediaMap.set(details.tabId, mediaList);
 
-        // Update badge count
-        chrome.action.setBadgeText({ tabId: details.tabId, text: `${mediaList.length}` });
-        chrome.action.setBadgeBackgroundColor({ tabId: details.tabId, color: '#10b981' });
+        // Update badge count safely
+        try {
+          chrome.action.setBadgeText({ tabId: details.tabId, text: `${mediaList.length}` }, () => {
+            if (chrome.runtime.lastError) {}
+          });
+          chrome.action.setBadgeBackgroundColor({ tabId: details.tabId, color: '#10b981' }, () => {
+            if (chrome.runtime.lastError) {}
+          });
+        } catch (e) {}
 
-        // Notify content script
-        chrome.tabs.sendMessage(details.tabId, { action: 'MEDIA_DETECTED', media: mediaItem }).catch(() => {});
+        // Notify content script safely without creating unchecked lastError
+        chrome.tabs.sendMessage(details.tabId, { action: 'MEDIA_DETECTED', media: mediaItem }, () => {
+          if (chrome.runtime.lastError) {
+            // Normal when tab hasn't loaded content script yet
+          }
+        });
       }
     }
   },
@@ -121,7 +135,11 @@ chrome.tabs.onRemoved.addListener((tabId) => tabMediaMap.delete(tabId));
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'loading') {
     tabMediaMap.delete(tabId);
-    chrome.action.setBadgeText({ tabId, text: '' });
+    try {
+      chrome.action.setBadgeText({ tabId, text: '' }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+    } catch (e) {}
   }
 });
 
