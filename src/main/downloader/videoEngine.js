@@ -5,14 +5,15 @@ const { EventEmitter } = require('events');
 
 function findBinary(name) {
   const candidates = [
-    path.join(__dirname, '../../../bin', name),
-    path.join(__dirname, '../../../../bin', name),
-    path.join(process.resourcesPath || '', 'app/bin', name),
+    path.join(path.dirname(process.execPath || ''), 'bin', name),
+    path.join(process.resourcesPath || '', '../bin', name),
     path.join(process.resourcesPath || '', 'bin', name),
+    path.join(process.resourcesPath || '', 'app/bin', name),
+    path.join(__dirname, '../../../bin', name),
     path.join(process.cwd(), 'bin', name)
   ];
   for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+    if (c && fs.existsSync(c)) return c;
   }
   return path.resolve(__dirname, '../../../bin', name);
 }

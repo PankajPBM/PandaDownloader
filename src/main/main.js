@@ -15,6 +15,14 @@ let isQuitting = false;
 
 const PORT = 45731;
 
+process.on('uncaughtException', (err) => {
+  console.error('[Panda Downloader] Global Exception Caught:', err?.message || err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Panda Downloader] Global Rejection Caught:', reason);
+});
+
 function showDownloadStatusWindow(taskId) {
   if (statusWindow && !statusWindow.isDestroyed()) {
     statusWindow.show();
