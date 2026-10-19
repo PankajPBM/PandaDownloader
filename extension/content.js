@@ -6,6 +6,14 @@
   let activePanel = null;
   let lastUrl = window.location.href;
 
+  function isExtensionValid() {
+    try {
+      return Boolean(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
+    } catch (e) {
+      return false;
+    }
+  }
+
   function findActiveMediaElement() {
     const root = document.body || document.documentElement;
     // 1. YouTube specific player detection
@@ -57,7 +65,7 @@
   const findActiveMediaContainer = findActiveMediaElement;
 
   function injectIdmFloatingPanel(mediaInfo) {
-    if (!mediaInfo || !mediaInfo.container) return;
+    if (!mediaInfo || !mediaInfo.container || !isExtensionValid()) return;
     const root = document.body || document.documentElement;
 
     let panel = document.getElementById('panda-idm-video-panel');
@@ -72,7 +80,12 @@
 
     const isAudio = mediaInfo.type === 'audio';
     const label = isAudio ? 'Download Audio' : 'Download this video';
-    const logoUrl = chrome.runtime.getURL('icons/icon16.png');
+    let logoUrl = '';
+    try {
+      if (isExtensionValid()) {
+        logoUrl = chrome.runtime.getURL('icons/icon16.png');
+      }
+    } catch (e) {}
 
     const getEstimatedSize = (quality, dur) => {
       if (!dur || dur <= 0 || isNaN(dur)) {
@@ -322,8 +335,16 @@
     }
   }
 
+  let observer = null;
+  let scanInterval = null;
+
   // Periodic scan to inject/reposition on SPA navigation and video changes
   function checkAndInject() {
+    if (!isExtensionValid()) {
+      try { if (observer) observer.disconnect(); } catch (e) {}
+      try { if (scanInterval) clearInterval(scanInterval); } catch (e) {}
+      return;
+    }
     try {
       const media = findActiveMediaElement();
       if (media) {
@@ -334,7 +355,12 @@
 
   // Real-time MutationObserver to inject as soon as video DOM element appears
   try {
-    const observer = new MutationObserver(() => {
+    observer = new MutationObserver(() => {
+      if (!isExtensionValid()) {
+        try { if (observer) observer.disconnect(); } catch (e) {}
+        try { if (scanInterval) clearInterval(scanInterval); } catch (e) {}
+        return;
+      }
       const video = document.querySelector('video');
       const panel = document.getElementById('panda-idm-video-panel');
       const root = document.body || document.documentElement;
@@ -350,17 +376,25 @@
 
   // Listen for media detection signals from background worker
   try {
-    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-      if (msg && msg.action === 'MEDIA_DETECTED') {
-        checkAndInject();
-        sendResponse({ ok: true });
-      }
-      return true;
-    });
+    if (isExtensionValid()) {
+      chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+        if (!isExtensionValid()) return;
+        if (msg && msg.action === 'MEDIA_DETECTED') {
+          checkAndInject();
+          sendResponse({ ok: true });
+        }
+        return true;
+      });
+    }
   } catch (e) {}
 
   // Monitor SPA URL changes (YouTube playlist, history navigation)
-  setInterval(() => {
+  scanInterval = setInterval(() => {
+    if (!isExtensionValid()) {
+      try { if (observer) observer.disconnect(); } catch (e) {}
+      try { if (scanInterval) clearInterval(scanInterval); } catch (e) {}
+      return;
+    }
     if (window.location.href !== lastUrl) {
       lastUrl = window.location.href;
       setTimeout(checkAndInject, 300);
@@ -372,14 +406,17 @@
 
   // Hook into YouTube navigation events
   window.addEventListener('yt-navigate-finish', () => {
+    if (!isExtensionValid()) return;
     setTimeout(checkAndInject, 200);
     setTimeout(checkAndInject, 800);
   });
   window.addEventListener('yt-page-data-updated', () => {
+    if (!isExtensionValid()) return;
     setTimeout(checkAndInject, 200);
     setTimeout(checkAndInject, 800);
   });
   window.addEventListener('popstate', () => {
+    if (!isExtensionValid()) return;
     setTimeout(checkAndInject, 300);
   });
 
