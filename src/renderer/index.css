@@ -97,6 +97,22 @@
   border-color: #e2e8f0;
 }
 
+.delete-confirm-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-tertiary);
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  margin: 12px 0;
+}
+
+[data-theme="light"] .delete-confirm-box {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

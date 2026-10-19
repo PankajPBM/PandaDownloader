@@ -26,6 +26,16 @@ contextBridge.exposeInMainWorld('pandaAPI', {
   showStatusWindow: (taskId) => ipcRenderer.invoke('show-status-window', taskId),
   closeStatusWindow: () => ipcRenderer.invoke('close-status-window'),
 
+  closePromptWindow: () => ipcRenderer.invoke('close-prompt-window'),
+  startDownloadFromPrompt: (data) => ipcRenderer.invoke('start-download-from-prompt', data),
+  queueDownloadFromPrompt: (data) => ipcRenderer.invoke('queue-download-from-prompt', data),
+
+  onPromptInfo: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('set-download-prompt-info', handler);
+    return () => ipcRenderer.removeListener('set-download-prompt-info', handler);
+  },
+
   onActiveStatusTask: (callback) => {
     const handler = (event, taskId) => callback(taskId);
     ipcRenderer.on('set-active-status-task', handler);

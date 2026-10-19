@@ -22,6 +22,17 @@ const YTDLP_PATH = findBinary('yt-dlp.exe');
 const FFMPEG_PATH = findBinary('ffmpeg.exe');
 const FFMPEG_DIR = path.dirname(FFMPEG_PATH);
 
+function fixMojibake(str) {
+  if (!str || typeof str !== 'string') return str || '';
+  if (/[\u00C2\u00C3\u00C4\u00C5\u00E0-\u00EF]/.test(str)) {
+    try {
+      const fixed = decodeURIComponent(escape(str));
+      if (fixed && fixed.length > 0) return fixed;
+    } catch (e) {}
+  }
+  return str;
+}
+
 function cleanVideoUrl(rawUrl) {
   if (!rawUrl) return rawUrl;
   try {
@@ -124,9 +135,16 @@ class VideoDownloadTask extends EventEmitter {
         args.push('-f', 'bestvideo[height<=360]+bestaudio/best[height<=360]/best');
       }
 
+      args.push('--encoding', 'utf-8');
       args.push(this.url);
 
-      this.process = spawn(YTDLP_PATH, args, { windowsHide: true });
+      const spawnEnv = {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONLEGACYWINDOWSSTDIO: 'utf-8'
+      };
+
+      this.process = spawn(YTDLP_PATH, args, { windowsHide: true, env: spawnEnv });
 
       const emitLiveProgress = () => {
         if (this.totalBytes > 0 && this.downloadedBytes > 0 && this.percent <= 0) {
@@ -216,7 +234,7 @@ class VideoDownloadTask extends EventEmitter {
               const dest = match[1].trim();
               const resolved = path.isAbsolute(dest) ? dest : path.join(this.saveDirectory, path.basename(dest));
               this.filePath = resolved;
-              this.filename = path.basename(resolved);
+              this.filename = fixMojibake(path.basename(resolved));
 
               const lower = dest.toLowerCase();
               if (lower.includes('.f140') || lower.endsWith('.m4a') || lower.endsWith('.opus') || (this.videoTotal > 0 && this.streamPhase === 1)) {
@@ -232,7 +250,7 @@ class VideoDownloadTask extends EventEmitter {
               const dest = match[1].trim();
               const resolved = path.isAbsolute(dest) ? dest : path.join(this.saveDirectory, path.basename(dest));
               this.filePath = resolved;
-              this.filename = path.basename(resolved);
+              this.filename = fixMojibake(path.basename(resolved));
             }
             emitLiveProgress();
           }
@@ -335,11 +353,16 @@ class VideoDownloadTask extends EventEmitter {
 
   _probeTitle() {
     return new Promise((resolve) => {
-      const probe = spawn(YTDLP_PATH, ['--js-runtimes', 'node', '--no-playlist', '--print', 'title', this.url], { windowsHide: true });
+      const spawnEnv = {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONLEGACYWINDOWSSTDIO: 'utf-8'
+      };
+      const probe = spawn(YTDLP_PATH, ['--encoding', 'utf-8', '--js-runtimes', 'node', '--no-playlist', '--print', 'title', this.url], { windowsHide: true, env: spawnEnv });
       let out = '';
       probe.stdout.on('data', d => out += d);
       probe.on('close', () => {
-        resolve(out.trim());
+        resolve(fixMojibake(out.trim()));
       });
       probe.on('error', () => resolve(null));
       setTimeout(() => {

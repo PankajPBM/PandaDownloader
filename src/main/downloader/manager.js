@@ -25,11 +25,27 @@ class DownloadManager extends EventEmitter {
     }
   }
 
+function fixMojibake(str) {
+  if (!str || typeof str !== 'string') return str || '';
+  if (/[\u00C2\u00C3\u00C4\u00C5\u00E0-\u00EF]/.test(str)) {
+    try {
+      const fixed = decodeURIComponent(escape(str));
+      if (fixed && fixed.length > 0) return fixed;
+    } catch (e) {}
+  }
+  return str;
+}
+
   _loadHistory() {
     try {
       if (fs.existsSync(this.historyFile)) {
         const raw = fs.readFileSync(this.historyFile, 'utf-8');
-        this.history = JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        this.history = Array.isArray(parsed) ? parsed.map(item => ({
+          ...item,
+          filename: fixMojibake(item.filename),
+          name: fixMojibake(item.name)
+        })) : [];
       } else {
         // Auto-migrate legacy file if present in user's downloads folder
         const legacyFile = path.join(
@@ -38,7 +54,12 @@ class DownloadManager extends EventEmitter {
         );
         if (fs.existsSync(legacyFile)) {
           const raw = fs.readFileSync(legacyFile, 'utf-8');
-          this.history = JSON.parse(raw);
+          const parsed = JSON.parse(raw);
+          this.history = Array.isArray(parsed) ? parsed.map(item => ({
+            ...item,
+            filename: fixMojibake(item.filename),
+            name: fixMojibake(item.name)
+          })) : [];
           this._saveHistory();
         }
       }

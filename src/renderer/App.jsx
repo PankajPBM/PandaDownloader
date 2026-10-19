@@ -4,16 +4,35 @@ import {
   Trash2, ShieldCheck, Activity, Globe, HardDrive, 
   Minus, Square, Copy, CheckCircle, Settings, Layers,
   ExternalLink, Zap, Check, Music, Video, Archive,
-  FileText, Cpu, AlertCircle, Sun, Moon, Phone, MessageCircle
+  FileText, Cpu, AlertCircle, Sun, Moon, Phone, MessageCircle,
+  Clock
 } from 'lucide-react';
+
+function fixMojibake(str) {
+  if (!str || typeof str !== 'string') return str || '';
+  if (/[\u00C2\u00C3\u00C4\u00C5\u00E0-\u00EF]/.test(str)) {
+    try {
+      const fixed = decodeURIComponent(escape(str));
+      if (fixed && fixed.length > 0) return fixed;
+    } catch (e) {}
+  }
+  return str;
+}
 
 export default function App() {
   const isStatusWindow = typeof window !== 'undefined' && window.location.hash.includes('status');
+  const isPromptWindow = typeof window !== 'undefined' && window.location.hash.includes('prompt');
   const [theme, setTheme] = useState(() => localStorage.getItem('panda_theme') || 'dark');
   const [tasks, setTasks] = useState([]);
   const [history, setHistory] = useState([]);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Prompt Window State (IDM Download File Info popup)
+  const [promptInfo, setPromptInfo] = useState(null);
+  const [promptName, setPromptName] = useState('');
+  const [promptDir, setPromptDir] = useState('');
+  const [promptInstantCheck, setPromptInstantCheck] = useState(false);
   
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -170,6 +189,17 @@ export default function App() {
         });
       }
 
+      let unsubPromptInfo = null;
+      if (window.pandaAPI.onPromptInfo) {
+        unsubPromptInfo = window.pandaAPI.onPromptInfo((info) => {
+          if (info) {
+            setPromptInfo(info);
+            setPromptName(fixMojibake(info.filename) || 'download_file');
+            setPromptDir(info.saveDirectory || '');
+          }
+        });
+      }
+
       const unsubClipboard = window.pandaAPI.onClipboardDetected((data) => {
         setClipboardPrompt(data.url);
         setTimeout(() => {
@@ -211,6 +241,7 @@ export default function App() {
         unsubDeleted();
         unsubOpenAdd();
         unsubOpenSettings();
+        if (unsubPromptInfo) unsubPromptInfo();
       };
     } else {
       // Mock tasks for development preview
@@ -447,6 +478,155 @@ export default function App() {
     return true;
   });
 
+  // IDM Download File Info Prompt Window (Standalone Topmost Floating Dialog)
+  if (isPromptWindow) {
+    const handleStart = async () => {
+      if (promptInstantCheck && window.pandaAPI) {
+        await window.pandaAPI.saveSettings({ ...settings, autoAcceptDownloads: true });
+      }
+      if (window.pandaAPI && promptInfo) {
+        await window.pandaAPI.startDownloadFromPrompt({
+          ...promptInfo,
+          filename: promptName,
+          saveDirectory: promptDir
+        });
+      }
+    };
+
+    const handleQueue = async () => {
+      if (window.pandaAPI && promptInfo) {
+        await window.pandaAPI.queueDownloadFromPrompt({
+          ...promptInfo,
+          filename: promptName,
+          saveDirectory: promptDir
+        });
+      }
+    };
+
+    const handleCancel = async () => {
+      if (window.pandaAPI) {
+        await window.pandaAPI.closePromptWindow();
+      }
+    };
+
+    const handleBrowse = async () => {
+      if (window.pandaAPI) {
+        const dir = await window.pandaAPI.selectDirectory();
+        if (dir) setPromptDir(dir);
+      }
+    };
+
+    return (
+      <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 14, background: 'var(--bg-secondary)', color: 'var(--text-main)', userSelect: 'none', border: '1px solid var(--border-focus)', borderRadius: 10, boxSizing: 'border-box', overflow: 'hidden' }}>
+        {/* Titlebar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--border-subtle)', WebkitAppRegion: 'drag', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 18 }}>🐼</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)' }}>
+                Download File Info
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Panda Downloader Accelerated Capture</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, WebkitAppRegion: 'no-drag' }}>
+            <button className="titlebar-btn close" onClick={handleCancel} title="Cancel / Close">
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body Form */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10, overflowY: 'auto', paddingRight: 2 }}>
+          {/* URL row */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>URL / Source:</div>
+            <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={promptInfo?.url}>
+              {promptInfo?.url || 'Waiting for download stream...'}
+            </div>
+          </div>
+
+          {/* File Name */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>File Name:</div>
+            <input 
+              type="text" 
+              className="form-input" 
+              value={promptName}
+              onChange={e => setPromptName(e.target.value)}
+              placeholder="Filename..."
+              autoFocus
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* Save Directory */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>Save To Folder:</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input 
+                type="text" 
+                className="form-input" 
+                value={promptDir}
+                onChange={e => setPromptDir(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button className="btn-secondary" onClick={handleBrowse} style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0 }}>
+                <Folder size={14} />
+                <span>Browse...</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Details Pill Row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              Category: <strong style={{ color: 'var(--text-main)', textTransform: 'capitalize' }}>{promptInfo?.category || 'General'}</strong>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              File Size: <strong style={{ color: '#06b6d4' }}>{promptInfo?.fileSize ? formatBytes(promptInfo.fileSize) : 'Detecting...'}</strong>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+              Acceleration: <strong style={{ color: '#10b981' }}>16 Connections</strong>
+            </div>
+          </div>
+
+          {/* Instant download checkbox */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <input 
+              type="checkbox" 
+              id="instantCheckPrompt"
+              checked={promptInstantCheck}
+              onChange={e => setPromptInstantCheck(e.target.checked)}
+              style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#10b981' }}
+            />
+            <label htmlFor="instantCheckPrompt" style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>
+              Don't ask again (Enable Instant Download / Auto-Start for future downloads)
+            </label>
+          </div>
+        </div>
+
+        {/* Pinned Action Buttons */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTop: '1px solid var(--border-subtle)', flexShrink: 0, marginTop: 8 }}>
+          <button className="btn-secondary" style={{ padding: '7px 16px', fontSize: 12 }} onClick={handleCancel}>
+            <X size={14} />
+            <span>Cancel</span>
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn-secondary" style={{ padding: '7px 16px', fontSize: 12 }} onClick={handleQueue}>
+              <Clock size={14} />
+              <span>Download Later</span>
+            </button>
+            <button className="btn-primary" style={{ padding: '7px 20px', fontSize: 12, fontWeight: 700 }} onClick={handleStart}>
+              <Download size={14} />
+              <span>Start Download</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isStatusWindow) {
     const task = activePopupTask || tasks[0] || (history.length > 0 ? history[0] : null) || {
       filename: 'Starting Download...',
@@ -548,7 +728,7 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 14, rowGap: 2 }}>
                 {task.segments.map((seg, idx) => (
                   <div key={idx} className="idm-segment-row" style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '1px 0' }}>
-                    <span style={{ width: 46, color: 'var(--text-muted)', fontSize: 10, flexShrink: 0 }}>Conn {idx + 1}:</span>
+                    <span style={{ width: 56, whiteSpace: 'nowrap', color: 'var(--text-muted)', fontSize: 10, flexShrink: 0 }}>Conn {idx + 1}:</span>
                     <div className="idm-segment-bar" style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
                       <div className="idm-segment-fill" style={{ width: `${Math.min(100, isDone ? 100 : (seg.percent || 0))}%`, height: '100%', background: '#10b981' }} />
                     </div>
@@ -801,10 +981,10 @@ export default function App() {
               <button 
                 className={`toolbar-toggle-btn ${settings.autoAcceptDownloads ? 'active' : ''}`}
                 onClick={toggleAutoAccept}
-                title="When ON, browser downloads start immediately without prompt"
+                title={settings.autoAcceptDownloads ? "Instant Download: ON (Downloads start immediately without confirmation)" : "Instant Download: OFF (Shows IDM Download File Info prompt)"}
               >
                 <Zap size={14} color={settings.autoAcceptDownloads ? '#10b981' : '#94a3b8'} />
-                <span>Auto-Accept: {settings.autoAcceptDownloads ? 'ON' : 'OFF'}</span>
+                <span>Instant Download: {settings.autoAcceptDownloads ? 'ON' : 'OFF'}</span>
               </button>
 
               {selectedTaskIds.size > 0 ? (
@@ -895,7 +1075,7 @@ export default function App() {
                         </div>
                         <div className="file-meta-col">
                           <div className="file-name" title={task.filename || task.url}>
-                            {task.filename || task.url}
+                            {fixMojibake(task.filename) || task.url}
                           </div>
                           <div className="file-details">
                             <span>{formatBytes(task.downloadedBytes)} / {formatBytes(task.totalBytes)}</span>
@@ -1326,9 +1506,9 @@ export default function App() {
 
               <div className="settings-row">
                 <div>
-                  <div style={{ fontWeight: 600 }}>⚡ Auto-Accept Downloads</div>
+                  <div style={{ fontWeight: 600 }}>⚡ Instant Download (Auto-Start)</div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                    Start downloads immediately from browser without confirmation dialog
+                    Start downloads immediately from browser without confirmation. If turned OFF, displays the IDM Download File Info prompt to customize filename and folder.
                   </div>
                 </div>
                 <label className="switch">
@@ -1546,24 +1726,24 @@ export default function App() {
               </button>
             </div>
 
-            <div style={{ fontSize: 13, color: '#cbd5e1' }}>
-              Are you sure you want to remove <strong>{deleteTarget.name}</strong>?
+            <div style={{ fontSize: 13, color: 'var(--text-main)', lineHeight: 1.5 }}>
+              Are you sure you want to remove <strong style={{ color: 'var(--accent-emerald)', wordBreak: 'break-all' }}>{fixMojibake(deleteTarget.name)}</strong>?
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8 }}>
+            <div className="delete-confirm-box">
               <input 
                 type="checkbox" 
                 id="delFileCheck" 
                 checked={deleteFileFromDisk} 
                 onChange={e => setDeleteFileFromDisk(e.target.checked)}
-                style={{ cursor: 'pointer', width: 16, height: 16 }}
+                style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#f43f5e' }}
               />
-              <label htmlFor="delFileCheck" style={{ fontSize: 12, color: '#f8fafc', cursor: 'pointer' }}>
-                Also delete downloaded file from hard disk
+              <label htmlFor="delFileCheck" style={{ fontSize: 12, color: 'var(--text-main)', cursor: 'pointer', fontWeight: 500 }}>
+                Also permanently delete downloaded file from hard disk
               </label>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
               <button className="btn-secondary" onClick={() => setDeleteTarget(null)}>
                 Cancel
               </button>
@@ -1573,7 +1753,7 @@ export default function App() {
                 onClick={confirmDelete}
               >
                 <Trash2 size={15} />
-                <span>Delete</span>
+                <span>{deleteFileFromDisk ? 'Delete from Disk & History' : 'Delete'}</span>
               </button>
             </div>
           </div>
@@ -1604,7 +1784,7 @@ export default function App() {
                 : `Are you sure you want to clear all ${filteredTasks.length} downloads from the list?`}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(0,0,0,0.25)', padding: 12, borderRadius: 8, border: '1px solid var(--border-subtle)', margin: '12px 0' }}>
+            <div className="delete-confirm-box">
               <input 
                 type="checkbox" 
                 id="clearDiskCheck" 

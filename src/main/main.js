@@ -7,6 +7,7 @@ const settingsManager = require('./settings');
 
 let mainWindow = null;
 let statusWindow = null;
+let promptWindow = null;
 let downloadManager = null;
 let tray = null;
 let lastClipboardText = '';
@@ -76,6 +77,62 @@ function showDownloadStatusWindow(taskId) {
 
   statusWindow.on('closed', () => {
     statusWindow = null;
+  });
+}
+
+function showDownloadPromptWindow(data) {
+  if (promptWindow && !promptWindow.isDestroyed()) {
+    promptWindow.show();
+    promptWindow.focus();
+    if (data) {
+      promptWindow.webContents.send('set-download-prompt-info', data);
+    }
+    return;
+  }
+
+  const iconPath = path.join(__dirname, '../../assets/icon.png');
+  promptWindow = new BrowserWindow({
+    width: 620,
+    height: 460,
+    minWidth: 580,
+    minHeight: 440,
+    useContentSize: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: true,
+    alwaysOnTop: true,
+    frame: false,
+    backgroundColor: '#070a12',
+    icon: iconPath,
+    skipTaskbar: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  const distHtml = path.join(__dirname, '../../dist/index.html');
+  const isViteDev = process.env.VITE_DEV === 'true';
+
+  if (isViteDev) {
+    promptWindow.loadURL('http://localhost:5173#prompt').catch(() => {
+      promptWindow.loadFile(distHtml, { hash: 'prompt' });
+    });
+  } else if (fs.existsSync(distHtml)) {
+    promptWindow.loadFile(distHtml, { hash: 'prompt' });
+  } else {
+    promptWindow.loadURL('http://localhost:5173#prompt');
+  }
+
+  promptWindow.webContents.once('did-finish-load', () => {
+    if (promptWindow && !promptWindow.isDestroyed() && data) {
+      promptWindow.webContents.send('set-download-prompt-info', data);
+    }
+  });
+
+  promptWindow.on('closed', () => {
+    promptWindow = null;
   });
 }
 
@@ -251,27 +308,50 @@ function startLoopbackServer() {
           const data = JSON.parse(body);
           if (data && data.url) {
             const settings = settingsManager.get();
-
-            // Directly start download and show ONLY the standalone small IDM status window
-            // Main application window stays hidden in background/system tray
-            const task = downloadManager.createTask(data.url, {
-              filename: data.filename,
-              format: data.format,
-              quality: data.quality,
-              headers: data.headers || {}
-            });
-
-            // Pop up only the compact, topmost IDM status window
-            showDownloadStatusWindow(task.id);
-
-            // Silently forward task to mainWindow so task lists stay updated
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('task-status', { id: task.id, status: task.status, task: task.toJSON() });
+            const category = settingsManager.getCategory(data.filename || '', data.url);
+            let targetDir = data.saveDirectory;
+            if (!targetDir) {
+              targetDir = settingsManager.getTargetDirForFile(data.filename || '', data.url);
             }
 
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, taskId: task.id }));
-            return;
+            const isInstant = settings.autoAcceptDownloads === true;
+
+            if (isInstant) {
+              // Instant Download: start immediately and show small IDM status window
+              const task = downloadManager.createTask(data.url, {
+                filename: data.filename,
+                saveDirectory: targetDir,
+                format: data.format,
+                quality: data.quality,
+                headers: data.headers || {}
+              });
+
+              showDownloadStatusWindow(task.id);
+
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('task-status', { id: task.id, status: task.status, task: task.toJSON() });
+              }
+
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, taskId: task.id }));
+              return;
+            } else {
+              // Prompt First (IDM Style): Ask user to confirm/edit filename & path before downloading
+              showDownloadPromptWindow({
+                url: data.url,
+                filename: data.filename || '',
+                category: category,
+                saveDirectory: targetDir,
+                fileSize: data.fileSize || 0,
+                format: data.format,
+                quality: data.quality,
+                headers: data.headers || {}
+              });
+
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, promptShown: true }));
+              return;
+            }
           }
         } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -351,6 +431,54 @@ function setupIpcHandlers() {
     return { success: true };
   });
 
+  ipcMain.handle('close-prompt-window', () => {
+    if (promptWindow && !promptWindow.isDestroyed()) {
+      promptWindow.close();
+      promptWindow = null;
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle('start-download-from-prompt', (event, data) => {
+    if (promptWindow && !promptWindow.isDestroyed()) {
+      promptWindow.close();
+      promptWindow = null;
+    }
+    const task = downloadManager.createTask(data.url, {
+      filename: data.filename,
+      saveDirectory: data.saveDirectory,
+      connectionsCount: data.connectionsCount || 16,
+      format: data.format,
+      quality: data.quality,
+      headers: data.headers || {}
+    });
+    showDownloadStatusWindow(task.id);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('task-status', { id: task.id, status: task.status, task: task.toJSON() });
+    }
+    return { success: true, taskId: task.id };
+  });
+
+  ipcMain.handle('queue-download-from-prompt', (event, data) => {
+    if (promptWindow && !promptWindow.isDestroyed()) {
+      promptWindow.close();
+      promptWindow = null;
+    }
+    const task = downloadManager.createTask(data.url, {
+      filename: data.filename,
+      saveDirectory: data.saveDirectory,
+      connectionsCount: data.connectionsCount || 16,
+      format: data.format,
+      quality: data.quality,
+      headers: data.headers || {}
+    });
+    task.pause();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('task-status', { id: task.id, status: task.status, task: task.toJSON() });
+    }
+    return { success: true, taskId: task.id };
+  });
+
   ipcMain.handle('add-batch-tasks', (event, { urls, connectionsCount, saveDirectory }) => {
     return downloadManager.createBatchTasks(urls, {
       connectionsCount,
@@ -417,8 +545,8 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('select-directory', async () => {
-    if (!mainWindow) return null;
-    const res = await dialog.showOpenDialog(mainWindow, {
+    const parentWin = BrowserWindow.getFocusedWindow() || mainWindow;
+    const res = await dialog.showOpenDialog(parentWin, {
       properties: ['openDirectory', 'createDirectory']
     });
     if (!res.canceled && res.filePaths.length > 0) {
