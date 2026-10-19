@@ -46,8 +46,8 @@ class DownloadManager extends EventEmitter {
     
     // Determine category folder
     let targetDir = options.saveDirectory;
-    if (!targetDir) {
-      targetDir = settingsManager.getTargetDirForFile(options.filename || url);
+    if (!targetDir || targetDir === settings.defaultSaveDir) {
+      targetDir = settingsManager.getTargetDirForFile(options.filename || '', url);
     }
 
     let task;
@@ -55,6 +55,8 @@ class DownloadManager extends EventEmitter {
       task = new VideoDownloadTask({
         url,
         filename: options.filename,
+        format: options.format,
+        quality: options.quality,
         saveDirectory: targetDir,
         connectionsCount: threads
       });

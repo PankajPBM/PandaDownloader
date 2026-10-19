@@ -13,11 +13,15 @@ class VideoDownloadTask extends EventEmitter {
     this.url = options.url;
     this.saveDirectory = options.saveDirectory || (
       process.env.USERPROFILE 
-        ? path.join(process.env.USERPROFILE, 'Downloads', 'PandaDownloads')
-        : path.join(process.cwd(), 'downloads')
+        ? path.join(process.env.USERPROFILE, 'Downloads', 'PandaDownloads', 'Video')
+        : path.join(process.cwd(), 'downloads', 'Video')
     );
-    this.connectionsCount = options.connectionsCount || 8;
+    this.connectionsCount = options.connectionsCount || 16;
+    this.format = options.format || 'mp4';
+    this.quality = options.quality || 'best';
 
+    this.customFilename = options.filename;
+    this.cleanTitle = options.filename ? options.filename.replace(/\.[^/.]+$/, '').trim() : '';
     this.filename = options.filename || 'Fetching title...';
     this.filePath = '';
     this.totalBytes = 0;
@@ -29,6 +33,13 @@ class VideoDownloadTask extends EventEmitter {
     this.error = null;
     this.segments = [];
     this.process = null;
+
+    // Multi-track progress tracking (Video -> Audio -> Merge)
+    this.streamPhase = 1; // 1 = video, 2 = audio, 3 = merger
+    this.videoDownloaded = 0;
+    this.videoTotal = 0;
+    this.audioDownloaded = 0;
+    this.audioTotal = 0;
   }
 
   async start() {
@@ -40,15 +51,21 @@ class VideoDownloadTask extends EventEmitter {
         fs.mkdirSync(this.saveDirectory, { recursive: true });
       }
 
-      // Step 1: Probe title using yt-dlp
-      const title = await this._probeTitle();
-      if (title) {
-        this.filename = `${title.replace(/[\\/:*?"<>|]/g, '_')}.mp4`;
-      } else {
-        this.filename = `Video_${Date.now()}.mp4`;
+      // Step 1: Probe title using yt-dlp if not provided
+      if (!this.cleanTitle) {
+        const title = await this._probeTitle();
+        if (title) {
+          this.cleanTitle = title.replace(/[\\/:*?"<>|]/g, '_').trim();
+        } else {
+          this.cleanTitle = `Video_${Date.now()}`;
+        }
       }
 
+      const isAudioOnly = this.format === 'mp3' || this.quality === 'audio' || /\.(mp3|m4a|wav|aac|flac)$/i.test(this.filename);
+      const ext = isAudioOnly ? 'mp3' : 'mp4';
+      this.filename = `${this.cleanTitle}.${ext}`;
       this.filePath = path.join(this.saveDirectory, this.filename);
+
       this.status = 'downloading';
       this.emit('status-changed', { status: this.status, task: this.toJSON() });
 
@@ -59,17 +76,25 @@ class VideoDownloadTask extends EventEmitter {
         status: 'downloading'
       }));
 
-      // Step 2: Spawn yt-dlp with parallel fragment connections and ffmpeg
+      // Step 2: Spawn yt-dlp with parallel fragment connections, ffmpeg muxing, and clean templates
       const args = [
         '--ffmpeg-location', FFMPEG_DIR,
         '--js-runtimes', 'node',
         '--newline',
+        '--no-playlist',
+        '--windows-filenames',
+        '--no-mtime',
         '--progress-template', 'PANDA:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.speed)s:%(progress._percent_str)s',
         '-N', String(this.connectionsCount),
         '-P', this.saveDirectory,
-        '-o', '%(title)s.%(ext)s',
-        this.url
+        '-o', '%(title)s.%(ext)s'
       ];
+
+      if (isAudioOnly) {
+        args.push('-x', '--audio-format', 'mp3');
+      }
+
+      args.push(this.url);
 
       this.process = spawn(YTDLP_PATH, args, { windowsHide: true });
 
@@ -78,33 +103,69 @@ class VideoDownloadTask extends EventEmitter {
         const lines = text.split('\n');
 
         for (const line of lines) {
-          if (line.startsWith('PANDA:')) {
-            const parts = line.split(':');
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          if (trimmed.startsWith('PANDA:')) {
+            const parts = trimmed.split(':');
             if (parts.length >= 5) {
-              const down = parseInt(parts[1], 10) || this.downloadedBytes;
-              const total = parseInt(parts[2], 10) || this.totalBytes;
+              const down = parseInt(parts[1], 10) || 0;
+              const total = parseInt(parts[2], 10) || 0;
               const spd = parseFloat(parts[3]) || 0;
               const pctStr = parts[4].replace('%', '').trim();
               const pct = parseFloat(pctStr) || 0;
 
-              this.downloadedBytes = down;
-              if (total > 0) this.totalBytes = total;
               this.speed = spd;
-              this.percent = pct;
 
-              // Update segment visualization
-              this.segments.forEach((seg) => {
-                seg.percent = Math.min(100, pct + (Math.random() * 4 - 2));
+              // Smoothly map video (0%-88%) and audio (88%-98%) tracks
+              if (this.streamPhase === 1) {
+                this.videoDownloaded = down;
+                if (total > 0) this.videoTotal = total;
+                this.percent = pct * 0.88;
+                this.downloadedBytes = down;
+                this.totalBytes = this.videoTotal;
+              } else if (this.streamPhase === 2) {
+                this.audioDownloaded = down;
+                if (total > 0) this.audioTotal = total;
+                this.percent = 88 + (pct * 0.10);
+                this.downloadedBytes = this.videoDownloaded + down;
+                this.totalBytes = this.videoTotal + this.audioTotal;
+              }
+
+              // Update segment visualization with dynamic live activity
+              this.segments.forEach((seg, i) => {
+                const jitter = ((i * 3) % 5) - 2;
+                seg.percent = Math.min(100, Math.max(0, this.percent + jitter));
               });
 
-              this.emit('progress', this.getProgress());
+              // Emit progress AND speed events
+              const prog = this.getProgress();
+              this.emit('progress', prog);
+              this.emit('speed', { speed: this.speed, progress: prog });
             }
-          } else if (line.includes('Destination:')) {
-            const match = line.match(/Destination:\s*(.+)$/);
+          } else if (trimmed.includes('Destination:')) {
+            const match = trimmed.match(/Destination:\s*(.+)$/);
+            if (match && match[1]) {
+              const dest = match[1].trim();
+              const lower = dest.toLowerCase();
+              // Transition to phase 2 when audio track starts
+              if (lower.includes('.f140') || lower.endsWith('.m4a') || lower.endsWith('.opus') || (this.videoTotal > 0 && this.streamPhase === 1)) {
+                this.streamPhase = 2;
+              }
+            }
+          } else if (trimmed.includes('[Merger]') || trimmed.includes('Merging formats into')) {
+            // Transition to phase 3: ffmpeg muxing
+            this.streamPhase = 3;
+            this.percent = 99;
+            this.speed = 0;
+            const match = trimmed.match(/Merging formats into ["']?([^"']+)["']?/i);
             if (match && match[1]) {
               this.filePath = match[1].trim();
               this.filename = path.basename(this.filePath);
             }
+            const prog = this.getProgress();
+            this.emit('progress', prog);
+            this.emit('speed', { speed: 0, progress: prog });
           }
         }
       });
@@ -118,11 +179,40 @@ class VideoDownloadTask extends EventEmitter {
           this.speed = 0;
           this.segments.forEach(s => s.percent = 100);
 
+          // Verify final merged file on disk
+          let finalPath = this.filePath || path.join(this.saveDirectory, this.filename);
+          if (!fs.existsSync(finalPath)) {
+            try {
+              const files = fs.readdirSync(this.saveDirectory);
+              const found = files.find(f => 
+                f.startsWith(this.cleanTitle.substring(0, 25)) && 
+                !f.endsWith('.part') && 
+                !f.endsWith('.ytdl') &&
+                !/\.f\d+\./.test(f)
+              );
+              if (found) {
+                this.filename = found;
+                finalPath = path.join(this.saveDirectory, found);
+                this.filePath = finalPath;
+              }
+            } catch (e) {}
+          }
+
+          let finalSize = this.totalBytes || this.downloadedBytes;
+          try {
+            if (fs.existsSync(finalPath)) {
+              finalSize = fs.statSync(finalPath).size;
+            }
+          } catch (e) {}
+
+          this.totalBytes = finalSize;
+          this.downloadedBytes = finalSize;
+
           this.emit('completed', {
             id: this.id,
-            filePath: this.filePath || path.join(this.saveDirectory, this.filename),
+            filePath: finalPath,
             filename: this.filename,
-            totalBytes: this.totalBytes || this.downloadedBytes
+            totalBytes: finalSize
           });
         } else if (this.status !== 'cancelled') {
           this.status = 'error';
@@ -146,7 +236,7 @@ class VideoDownloadTask extends EventEmitter {
 
   _probeTitle() {
     return new Promise((resolve) => {
-      const probe = spawn(YTDLP_PATH, ['--js-runtimes', 'node', '--print', 'title', this.url], { windowsHide: true });
+      const probe = spawn(YTDLP_PATH, ['--js-runtimes', 'node', '--no-playlist', '--print', 'title', this.url], { windowsHide: true });
       let out = '';
       probe.stdout.on('data', d => out += d);
       probe.on('close', () => {
@@ -154,14 +244,13 @@ class VideoDownloadTask extends EventEmitter {
       });
       probe.on('error', () => resolve(null));
       setTimeout(() => {
-        probe.kill();
+        try { probe.kill(); } catch (e) {}
         resolve(null);
       }, 10000);
     });
   }
 
   pause() {
-    // yt-dlp does not support in-flight pause, but killing it allows resume
     this.cancel();
   }
 
@@ -185,10 +274,11 @@ class VideoDownloadTask extends EventEmitter {
       filename: this.filename,
       downloadedBytes: this.downloadedBytes,
       totalBytes: this.totalBytes,
-      percent: parseFloat(this.percent.toFixed(2)),
+      percent: parseFloat(this.percent.toFixed(1)),
       speed: this.speed,
       supportsRange: true,
-      segments: this.segments
+      segments: this.segments,
+      phase: this.streamPhase === 3 ? 'merging' : 'downloading'
     };
   }
 
@@ -202,11 +292,12 @@ class VideoDownloadTask extends EventEmitter {
       downloadedBytes: this.downloadedBytes,
       totalBytes: this.totalBytes,
       speed: this.speed,
-      percent: this.percent,
+      percent: parseFloat(this.percent.toFixed(1)),
       supportsRange: true,
       error: this.error,
       connectionsCount: this.connectionsCount,
-      segments: this.segments
+      segments: this.segments,
+      phase: this.streamPhase === 3 ? 'merging' : 'downloading'
     };
   }
 }
@@ -222,10 +313,13 @@ function isVideoPortalUrl(url) {
     lower.includes('dailymotion.com') ||
     lower.includes('facebook.com/watch') ||
     lower.includes('facebook.com/share') ||
+    lower.includes('facebook.com/reel') ||
     lower.includes('instagram.com/reel') ||
     lower.includes('instagram.com/tv') ||
-    lower.includes('x.com/i/status') ||
-    lower.includes('twitter.com/i/status')
+    lower.includes('x.com/') ||
+    lower.includes('twitter.com/') ||
+    lower.includes('twitch.tv') ||
+    lower.includes('bilibili.com')
   );
 }
 

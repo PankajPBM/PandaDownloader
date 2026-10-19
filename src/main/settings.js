@@ -66,25 +66,51 @@ class SettingsManager {
     return this.settings;
   }
 
-  getCategoryForExtension(ext) {
-    if (!ext) return 'general';
-    const cleanExt = ext.replace(/^\./, '').toLowerCase();
+  getCategory(filename = '', url = '') {
+    const combined = `${filename} ${url}`.toLowerCase();
+    
+    // Check video portals
+    if (/youtube\.com|youtu\.be|vimeo\.com|tiktok\.com|dailymotion\.com|facebook\.com|instagram\.com|x\.com|twitter\.com|twitch\.tv|bilibili\.com/i.test(combined)) {
+      if (/\.(mp3|wav|m4a|flac|aac|ogg|opus)/i.test(filename)) return 'audio';
+      return 'video';
+    }
 
-    if (['mp4', 'webm', 'mkv', 'flv', 'avi', 'mov', 'wmv', 'm3u8', 'mpd'].includes(cleanExt)) return 'video';
-    if (['mp3', 'wav', 'm4a', 'flac', 'aac', 'ogg'].includes(cleanExt)) return 'audio';
-    if (['zip', 'rar', '7z', 'tar', 'gz', 'iso', 'bz2', '7zip'].includes(cleanExt)) return 'compressed';
-    if (['exe', 'msi', 'apk', 'dmg', 'bin'].includes(cleanExt)) return 'programs';
-    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'].includes(cleanExt)) return 'documents';
+    let cleanExt = (path.extname(filename || '') || path.extname(url.split('?')[0] || '')).replace(/^\./, '').toLowerCase();
+
+    if (['mp4', 'webm', 'mkv', 'flv', 'avi', 'mov', 'wmv', 'm3u8', 'mpd', 'ts', 'm4v', '3gp'].includes(cleanExt)) return 'video';
+    if (['mp3', 'wav', 'm4a', 'flac', 'aac', 'ogg', 'opus', 'wma', 'mid', 'midi'].includes(cleanExt)) return 'audio';
+    if (['zip', 'rar', '7z', 'tar', 'gz', 'iso', 'bz2', 'xz', '7zip', 'tgz'].includes(cleanExt)) return 'compressed';
+    if (['exe', 'msi', 'apk', 'dmg', 'bin', 'deb', 'rpm', 'pkg', 'jar', 'app'].includes(cleanExt)) return 'programs';
+    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'epub', 'mobi', 'rtf', 'csv'].includes(cleanExt)) return 'documents';
 
     return 'general';
   }
 
-  getTargetDirForFile(filename) {
+  getCategoryForExtension(ext) {
+    return this.getCategory(`file.${ext}`);
+  }
+
+  ensureCategoryFolders() {
+    try {
+      const baseDir = this.settings.defaultSaveDir;
+      if (!fs.existsSync(baseDir)) {
+        fs.mkdirSync(baseDir, { recursive: true });
+      }
+      for (const folder of Object.values(this.settings.categoryFolders)) {
+        const full = path.join(baseDir, folder);
+        if (!fs.existsSync(full)) {
+          fs.mkdirSync(full, { recursive: true });
+        }
+      }
+    } catch (e) {}
+  }
+
+  getTargetDirForFile(filename, url = '') {
+    this.ensureCategoryFolders();
     const baseDir = this.settings.defaultSaveDir;
     if (!this.settings.autoCategorize) return baseDir;
 
-    const ext = path.extname(filename);
-    const category = this.getCategoryForExtension(ext);
+    const category = this.getCategory(filename, url);
     const folderName = this.settings.categoryFolders[category] || 'General';
 
     const fullPath = path.join(baseDir, folderName);
@@ -95,4 +121,6 @@ class SettingsManager {
   }
 }
 
-module.exports = new SettingsManager();
+const instance = new SettingsManager();
+instance.ensureCategoryFolders();
+module.exports = instance;

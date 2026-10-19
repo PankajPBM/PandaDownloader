@@ -4,6 +4,7 @@ const http = require('http');
 const https = require('https');
 const { EventEmitter } = require('events');
 const { URL } = require('url');
+const settingsManager = require('../settings');
 
 class DownloadTask extends EventEmitter {
   constructor(options) {
@@ -121,6 +122,46 @@ class DownloadTask extends EventEmitter {
             const urlPath = parsedUrl.pathname.split('/').filter(Boolean).pop();
             this.filename = urlPath ? decodeURIComponent(urlPath) : `file_${Date.now()}`;
           }
+        }
+
+        // Auto-detect extension from Content-Type if missing
+        if (!path.extname(this.filename)) {
+          const contentType = (res.headers['content-type'] || '').toLowerCase();
+          const extMap = {
+            'video/mp4': '.mp4',
+            'video/webm': '.webm',
+            'video/x-matroska': '.mkv',
+            'video/quicktime': '.mov',
+            'audio/mpeg': '.mp3',
+            'audio/mp3': '.mp3',
+            'audio/mp4': '.m4a',
+            'audio/wav': '.wav',
+            'audio/flac': '.flac',
+            'application/zip': '.zip',
+            'application/x-zip-compressed': '.zip',
+            'application/x-rar-compressed': '.rar',
+            'application/x-7z-compressed': '.7z',
+            'application/pdf': '.pdf',
+            'application/x-msdownload': '.exe',
+            'application/vnd.android.package-archive': '.apk',
+            'image/jpeg': '.jpg',
+            'image/png': '.png',
+            'image/webp': '.webp'
+          };
+          for (const [mime, ext] of Object.entries(extMap)) {
+            if (contentType.includes(mime)) {
+              this.filename += ext;
+              break;
+            }
+          }
+        }
+
+        // Sanitize filename for Windows
+        this.filename = this.filename.replace(/[\\/:*?"<>|]/g, '_').trim();
+
+        // If target directory is the base download folder, auto-categorize now that filename is confirmed
+        if (settingsManager.get().autoCategorize && this.saveDirectory === settingsManager.get().defaultSaveDir) {
+          this.saveDirectory = settingsManager.getTargetDirForFile(this.filename, this.url);
         }
 
         // Check Range support

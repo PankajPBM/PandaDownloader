@@ -17,11 +17,14 @@ export default function App() {
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [activePopupTask, setActivePopupTask] = useState(null);
+  const [activePopupTaskId, setActivePopupTaskId] = useState(null);
   const [completionTask, setCompletionTask] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleteFileFromDisk, setDeleteFileFromDisk] = useState(false);
+
+  // Derive popup task directly from active tasks or completion task to guarantee 100% sync
+  const activePopupTask = tasks.find(t => t.id === activePopupTaskId) || 
+    (completionTask && completionTask.id === activePopupTaskId ? completionTask : null);
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -82,24 +85,24 @@ export default function App() {
       });
 
       const unsubProgress = window.pandaAPI.onProgress((prog) => {
-        setTasks(prev => prev.map(t => {
-          if (t.id === prog.id) {
-            const updated = { ...t, ...prog };
-            // Keep popup synced if open
-            setActivePopupTask(curr => curr && curr.id === prog.id ? updated : curr);
-            return updated;
-          }
-          return t;
-        }));
+        setTasks(prev => {
+          const updated = prev.map(t => {
+            if (t.id === prog.id) {
+              return { ...t, ...prog };
+            }
+            return t;
+          });
+          const total = updated.reduce((acc, t) => acc + (t.status === 'downloading' ? (t.speed || 0) : 0), 0);
+          setTotalSpeed(total);
+          return updated;
+        });
       });
 
       const unsubSpeed = window.pandaAPI.onSpeed((data) => {
         setTasks(prev => {
           const updated = prev.map(t => {
             if (t.id === data.progress.id) {
-              const u = { ...t, ...data.progress };
-              setActivePopupTask(curr => curr && curr.id === u.id ? u : curr);
-              return u;
+              return { ...t, ...data.progress };
             }
             return t;
           });
@@ -118,17 +121,22 @@ export default function App() {
           const list = [data.task, ...prev];
           // Open IDM progress popup for new downloading task
           if (data.task && data.task.status === 'downloading') {
-            setActivePopupTask(data.task);
+            setActivePopupTaskId(data.task.id);
           }
           return list;
         });
       });
 
       const unsubCompleted = window.pandaAPI.onCompleted((data) => {
-        setTasks(prev => prev.filter(t => t.id !== data.id));
+        setTasks(prev => {
+          const remaining = prev.filter(t => t.id !== data.id);
+          const total = remaining.reduce((acc, t) => acc + (t.status === 'downloading' ? (t.speed || 0) : 0), 0);
+          setTotalSpeed(total);
+          return remaining;
+        });
         setHistory(prev => [{ ...data, status: 'completed' }, ...prev]);
         setCompletionTask(data);
-        setActivePopupTask(curr => curr && curr.id === data.id ? null : curr);
+        setActivePopupTaskId(curr => curr === data.id ? null : curr);
       });
 
       const unsubClipboard = window.pandaAPI.onClipboardDetected((data) => {
@@ -142,14 +150,19 @@ export default function App() {
           setShowAddModal(true);
         } else if (data && data.task) {
           setTasks(prev => [data.task, ...prev]);
-          setActivePopupTask(data.task);
+          setActivePopupTaskId(data.task.id);
         }
       });
 
       const unsubDeleted = window.pandaAPI.onTaskDeleted((data) => {
-        setTasks(prev => prev.filter(t => t.id !== data.id));
+        setTasks(prev => {
+          const remaining = prev.filter(t => t.id !== data.id);
+          const total = remaining.reduce((acc, t) => acc + (t.status === 'downloading' ? (t.speed || 0) : 0), 0);
+          setTotalSpeed(total);
+          return remaining;
+        });
         setHistory(prev => prev.filter(t => t.id !== data.id));
-        setActivePopupTask(curr => curr && curr.id === data.id ? null : curr);
+        setActivePopupTaskId(curr => curr === data.id ? null : curr);
       });
 
       const unsubOpenAdd = window.pandaAPI.onOpenAddModal(() => setShowAddModal(true));
@@ -212,10 +225,10 @@ export default function App() {
         url: newUrl.trim(),
         filename: customTitle.trim() || undefined,
         connectionsCount: connectionsCount,
-        saveDirectory: targetSaveDir.trim() || undefined
+        saveDirectory: (targetSaveDir.trim() && targetSaveDir.trim() !== settings.defaultSaveDir) ? targetSaveDir.trim() : undefined
       });
       if (task) {
-        setActivePopupTask(task);
+        setActivePopupTaskId(task.id);
       }
     }
     setNewUrl('');
@@ -231,7 +244,7 @@ export default function App() {
       await window.pandaAPI.addBatchTasks({
         urls: lines,
         connectionsCount: batchThreads,
-        saveDirectory: targetSaveDir.trim() || undefined
+        saveDirectory: (targetSaveDir.trim() && targetSaveDir.trim() !== settings.defaultSaveDir) ? targetSaveDir.trim() : undefined
       });
       const data = await window.pandaAPI.getAllTasks();
       if (data) setTasks(data.active || []);
@@ -243,13 +256,11 @@ export default function App() {
   const handlePause = (id) => {
     if (window.pandaAPI) window.pandaAPI.pauseTask(id);
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'paused', speed: 0 } : t));
-    setActivePopupTask(curr => curr && curr.id === id ? { ...curr, status: 'paused', speed: 0 } : curr);
   };
 
   const handleResume = (id) => {
     if (window.pandaAPI) window.pandaAPI.resumeTask(id);
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: 'downloading' } : t));
-    setActivePopupTask(curr => curr && curr.id === id ? { ...curr, status: 'downloading' } : curr);
   };
 
   const promptDelete = (task) => {
@@ -264,8 +275,8 @@ export default function App() {
     }
     setTasks(prev => prev.filter(t => t.id !== deleteTarget.id));
     setHistory(prev => prev.filter(t => t.id !== deleteTarget.id));
-    if (activePopupTask && activePopupTask.id === deleteTarget.id) {
-      setActivePopupTask(null);
+    if (activePopupTaskId === deleteTarget.id) {
+      setActivePopupTaskId(null);
     }
     setDeleteTarget(null);
   };
@@ -570,7 +581,7 @@ export default function App() {
                 <div 
                   key={task.id} 
                   className="download-card"
-                  onClick={() => setActivePopupTask(task)}
+                  onClick={() => setActivePopupTaskId(task.id)}
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="card-header">
@@ -673,7 +684,7 @@ export default function App() {
       {/* 1. ICONIC IDM DOWNLOAD PROGRESS POPUP WINDOW */}
       {/* ============================================================== */}
       {activePopupTask && (
-        <div className="modal-backdrop" onClick={() => setActivePopupTask(null)}>
+        <div className="modal-backdrop" onClick={() => setActivePopupTaskId(null)}>
           <div className="idm-popup-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -683,7 +694,7 @@ export default function App() {
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>Dynamic Range Segmentation Engine</div>
                 </div>
               </div>
-              <button className="titlebar-btn" onClick={() => setActivePopupTask(null)} title="Hide to Background">
+              <button className="titlebar-btn" onClick={() => setActivePopupTaskId(null)} title="Hide to Background">
                 <Minus size={16} />
               </button>
             </div>
@@ -778,7 +789,7 @@ export default function App() {
               </div>
 
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-secondary" onClick={() => setActivePopupTask(null)}>
+                <button className="btn-secondary" onClick={() => setActivePopupTaskId(null)}>
                   Hide to Background
                 </button>
                 <button className="btn-secondary" style={{ color: '#f43f5e', borderColor: 'rgba(244, 63, 94, 0.3)' }} onClick={() => promptDelete(activePopupTask)}>
