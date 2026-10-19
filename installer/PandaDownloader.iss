@@ -32,6 +32,9 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
+CloseApplications=yes
+CloseApplicationsFilter=*.exe,*.dll
+RestartApplications=no
 UninstallDisplayIcon={app}\assets\icon.ico
 VersionInfoVersion=1.1.0.0
 VersionInfoCompany={#MyAppPublisher}
@@ -85,12 +88,49 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 
 [UninstallRun]
 ; Remove Windows Firewall rule on uninstall
-Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""Panda Downloader Loopback Daemon"""; Flags: runhidden
+Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""Panda Downloader Loopback Daemon"""; Flags: runhidden; RunOnceId: "PandaFirewallDel"
 
 [Code]
-procedure InitializeWizard;
+procedure KillProcess(const ExeName: string);
 var
-  InfoLabel: TLabel;
+  ResultCode: Integer;
+begin
+  Exec('taskkill.exe', '/F /IM ' + ExeName + ' /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  // Forcefully terminate any running application instance before install starts
+  KillProcess('{#MyAppExeName}');
+  KillProcess('ffmpeg.exe');
+  KillProcess('yt-dlp.exe');
+  Sleep(500);
+  Result := True;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+  begin
+    // Double check right before file extraction starts to ensure no file locks
+    KillProcess('{#MyAppExeName}');
+    KillProcess('ffmpeg.exe');
+    KillProcess('yt-dlp.exe');
+    Sleep(500);
+  end;
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  // Terminate any running instance before uninstall starts
+  KillProcess('{#MyAppExeName}');
+  KillProcess('ffmpeg.exe');
+  KillProcess('yt-dlp.exe');
+  Sleep(500);
+  Result := True;
+end;
+
+procedure InitializeWizard;
 begin
   WizardForm.WelcomeLabel2.Caption := 
     'Welcome to Panda Downloader Setup!' + #13#10#13#10 +
