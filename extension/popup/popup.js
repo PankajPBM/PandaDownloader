@@ -29,8 +29,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         .replace(/\| Vimeo$/i, '')
         .trim();
 
+      let videoUrl = tab.url;
+      try {
+        const u = new URL(tab.url);
+        if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
+          const v = u.searchParams.get('v');
+          if (v) videoUrl = `https://www.youtube.com/watch?v=${v}`;
+        }
+      } catch (e) {}
+
       displayList.push({
-        url: tab.url,
+        url: videoUrl,
         filename: `${cleanTitle}.mp4`,
         format: 'mp4',
         quality: '1080p',
@@ -40,7 +49,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       displayList.push({
-        url: tab.url,
+        url: videoUrl,
         filename: `${cleanTitle}.mp4`,
         format: 'mp4',
         quality: '720p',
@@ -50,7 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       displayList.push({
-        url: tab.url,
+        url: videoUrl,
         filename: `${cleanTitle}.mp4`,
         format: 'mp4',
         quality: '480p',
@@ -60,7 +69,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       displayList.push({
-        url: tab.url,
+        url: videoUrl,
         filename: `${cleanTitle}.mp3`,
         format: 'mp3',
         quality: 'audio',

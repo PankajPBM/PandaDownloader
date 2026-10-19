@@ -6,11 +6,27 @@ const { EventEmitter } = require('events');
 const YTDLP_PATH = path.resolve(__dirname, '../../../bin/yt-dlp.exe');
 const FFMPEG_DIR = path.resolve(__dirname, '../../../bin');
 
+function cleanVideoUrl(rawUrl) {
+  if (!rawUrl) return rawUrl;
+  try {
+    const u = new URL(rawUrl);
+    if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
+      const v = u.searchParams.get('v');
+      if (v) {
+        return `https://www.youtube.com/watch?v=${v}`;
+      }
+    }
+    return rawUrl;
+  } catch (e) {
+    return rawUrl;
+  }
+}
+
 class VideoDownloadTask extends EventEmitter {
   constructor(options) {
     super();
     this.id = options.id || `vtask_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    this.url = options.url;
+    this.url = cleanVideoUrl(options.url);
     this.saveDirectory = options.saveDirectory || (
       process.env.USERPROFILE 
         ? path.join(process.env.USERPROFILE, 'Downloads', 'PandaDownloads', 'Video')
@@ -22,7 +38,7 @@ class VideoDownloadTask extends EventEmitter {
 
     this.customFilename = options.filename;
     this.cleanTitle = options.filename ? options.filename.replace(/\.[^/.]+$/, '').trim() : '';
-    this.filename = options.filename || 'Fetching title...';
+    this.filename = options.filename || 'Panda_Video.mp4';
     this.filePath = '';
     this.totalBytes = 0;
     this.downloadedBytes = 0;
@@ -44,30 +60,21 @@ class VideoDownloadTask extends EventEmitter {
 
   async start() {
     try {
-      this.status = 'probing';
-      this.emit('status-changed', { status: this.status });
+      this.status = 'downloading';
+      this.emit('status-changed', { status: this.status, task: this.toJSON() });
 
       if (!fs.existsSync(this.saveDirectory)) {
         fs.mkdirSync(this.saveDirectory, { recursive: true });
       }
 
-      // Step 1: Probe title using yt-dlp if not provided
       if (!this.cleanTitle) {
-        const title = await this._probeTitle();
-        if (title) {
-          this.cleanTitle = title.replace(/[\\/:*?"<>|]/g, '_').trim();
-        } else {
-          this.cleanTitle = `Video_${Date.now()}`;
-        }
+        this.cleanTitle = `Video_${Date.now()}`;
       }
 
       const isAudioOnly = this.format === 'mp3' || this.quality === 'audio' || /\.(mp3|m4a|wav|aac|flac)$/i.test(this.filename);
       const ext = isAudioOnly ? 'mp3' : 'mp4';
       this.filename = `${this.cleanTitle}.${ext}`;
       this.filePath = path.join(this.saveDirectory, this.filename);
-
-      this.status = 'downloading';
-      this.emit('status-changed', { status: this.status, task: this.toJSON() });
 
       // Initialize segments to visualize multi-connection fragments
       this.segments = Array.from({ length: this.connectionsCount }, (_, i) => ({
@@ -76,10 +83,9 @@ class VideoDownloadTask extends EventEmitter {
         status: 'downloading'
       }));
 
-      // Step 2: Spawn yt-dlp with parallel fragment connections, ffmpeg muxing, and clean templates
+      // Immediate spawn: No blocking probe; start downloading stream instantly
       const args = [
         '--ffmpeg-location', FFMPEG_DIR,
-        '--js-runtimes', 'node',
         '--newline',
         '--no-playlist',
         '--windows-filenames',
@@ -91,7 +97,15 @@ class VideoDownloadTask extends EventEmitter {
       ];
 
       if (isAudioOnly) {
-        args.push('-x', '--audio-format', 'mp3');
+        args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+      } else if (this.quality === '1080p') {
+        args.push('-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best');
+      } else if (this.quality === '720p') {
+        args.push('-f', 'bestvideo[height<=720]+bestaudio/best[height<=720]/best');
+      } else if (this.quality === '480p') {
+        args.push('-f', 'bestvideo[height<=480]+bestaudio/best[height<=480]/best');
+      } else if (this.quality === '360p') {
+        args.push('-f', 'bestvideo[height<=360]+bestaudio/best[height<=360]/best');
       }
 
       args.push(this.url);

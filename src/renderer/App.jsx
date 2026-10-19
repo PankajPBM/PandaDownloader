@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 export default function App() {
+  const isStatusWindow = typeof window !== 'undefined' && window.location.hash.includes('status');
   const [theme, setTheme] = useState(() => localStorage.getItem('panda_theme') || 'dark');
   const [tasks, setTasks] = useState([]);
   const [history, setHistory] = useState([]);
@@ -24,7 +25,8 @@ export default function App() {
 
   // Derive popup task directly from active tasks or completion task to guarantee 100% sync
   const activePopupTask = tasks.find(t => t.id === activePopupTaskId) || 
-    (completionTask && completionTask.id === activePopupTaskId ? completionTask : null);
+    (completionTask && completionTask.id === activePopupTaskId ? completionTask : null) ||
+    tasks[0] || history[0];
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -116,15 +118,16 @@ export default function App() {
         setTasks(prev => {
           const exists = prev.some(t => t.id === data.id);
           if (exists) {
-            return prev.map(t => t.id === data.id ? { ...t, status: data.status } : t);
+            return prev.map(t => t.id === data.id ? { ...t, status: data.status, ...(data.task || {}) } : t);
           }
-          const list = [data.task, ...prev];
-          // Open IDM progress popup for new downloading task
-          if (data.task && data.task.status === 'downloading') {
-            setActivePopupTaskId(data.task.id);
+          if (data.task) {
+            return [data.task, ...prev];
           }
-          return list;
+          return prev;
         });
+        if (data.task) {
+          setActivePopupTaskId(data.task.id);
+        }
       });
 
       const unsubCompleted = window.pandaAPI.onCompleted((data) => {
@@ -134,10 +137,21 @@ export default function App() {
           setTotalSpeed(total);
           return remaining;
         });
-        setHistory(prev => [{ ...data, status: 'completed' }, ...prev]);
+        setHistory(prev => {
+          const exists = prev.some(h => h.id === data.id);
+          if (exists) return prev.map(h => h.id === data.id ? { ...h, ...data, status: 'completed' } : h);
+          return [{ ...data, status: 'completed' }, ...prev];
+        });
         setCompletionTask(data);
         setActivePopupTaskId(curr => curr === data.id ? null : curr);
       });
+
+      let unsubActiveStatusTask = null;
+      if (window.pandaAPI.onActiveStatusTask) {
+        unsubActiveStatusTask = window.pandaAPI.onActiveStatusTask((taskId) => {
+          if (taskId) setActivePopupTaskId(taskId);
+        });
+      }
 
       const unsubClipboard = window.pandaAPI.onClipboardDetected((data) => {
         setClipboardPrompt(data.url);
@@ -228,6 +242,10 @@ export default function App() {
         saveDirectory: (targetSaveDir.trim() && targetSaveDir.trim() !== settings.defaultSaveDir) ? targetSaveDir.trim() : undefined
       });
       if (task) {
+        setTasks(prev => {
+          const exists = prev.some(t => t.id === task.id);
+          return exists ? prev : [task, ...prev];
+        });
         setActivePopupTaskId(task.id);
       }
     }
@@ -366,6 +384,136 @@ export default function App() {
     if (activeCategory === 'documents') return /\.(pdf|docx?|xlsx?|pptx?|txt)$/i.test(name);
     return true;
   });
+
+  if (isStatusWindow) {
+    const task = activePopupTask || tasks[0] || (history.length > 0 ? history[0] : null) || {
+      filename: 'Starting Download...',
+      status: 'downloading',
+      downloadedBytes: 0,
+      totalBytes: 0,
+      percent: 0,
+      speed: 0,
+      supportsRange: true
+    };
+
+    return (
+      <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 14, background: '#070a12', color: '#f8fafc', userSelect: 'none', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: 10, boxSizing: 'border-box' }}>
+        {/* Draggable Titlebar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.08)', WebkitAppRegion: 'drag' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 18 }}>⚡</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', maxWidth: 440, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Download Status: {task.filename || 'File'}
+              </div>
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>Dynamic Range Segmentation Engine</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, WebkitAppRegion: 'no-drag' }}>
+            <button className="titlebar-btn" onClick={() => window.pandaAPI && window.pandaAPI.closeStatusWindow()} title="Hide to Background">
+              <Minus size={14} />
+            </button>
+            <button className="titlebar-btn close" onClick={() => window.pandaAPI && window.pandaAPI.closeStatusWindow()} title="Close Window">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Grid info */}
+        <div className="idm-grid" style={{ marginTop: 10, flex: 1 }}>
+          <span className="idm-grid-label">File Name:</span>
+          <span className="idm-grid-value" title={task.filename} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.filename || task.url}</span>
+
+          <span className="idm-grid-label">Status:</span>
+          <span className="idm-grid-value" style={{ textTransform: 'capitalize', color: task.status === 'downloading' || task.status === 'completed' ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+            {task.status}
+          </span>
+
+          <span className="idm-grid-label">File Size:</span>
+          <span className="idm-grid-value">{formatBytes(task.totalBytes)}</span>
+
+          <span className="idm-grid-label">Downloaded:</span>
+          <span className="idm-grid-value">{formatBytes(task.downloadedBytes)} ({task.percent || 0}%)</span>
+
+          <span className="idm-grid-label">Transfer Rate:</span>
+          <span className="idm-grid-value" style={{ color: '#06b6d4', fontWeight: 700 }}>
+            {task.status === 'downloading' ? formatSpeed(task.speed) : '0 KB/s'}
+          </span>
+
+          <span className="idm-grid-label">Time Left (ETA):</span>
+          <span className="idm-grid-value">{formatETA(task.eta)}</span>
+
+          <span className="idm-grid-label">Resume Capability:</span>
+          <span className="idm-grid-value" style={{ color: task.supportsRange ? '#10b981' : '#f59e0b' }}>
+            {task.supportsRange ? '✓ Yes (HTTP Range)' : 'Limited / Single Stream'}
+          </span>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="idm-shimmer-track" style={{ margin: '8px 0' }}>
+          <div 
+            className="idm-shimmer-fill" 
+            style={{ width: `${Math.min(100, task.percent || 0)}%` }}
+          />
+          <div className="idm-shimmer-text">
+            {task.percent || 0}% Completed
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {task.status === 'completed' ? (
+              <>
+                {task.filePath && (
+                  <button className="btn-primary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => {
+                    handleOpenFile(task.filePath);
+                    window.pandaAPI && window.pandaAPI.closeStatusWindow();
+                  }}>
+                    <File size={14} />
+                    <span>Open File</span>
+                  </button>
+                )}
+                {task.filePath && (
+                  <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => handleOpenFolder(task.filePath)}>
+                    <Folder size={14} />
+                    <span>Open Folder</span>
+                  </button>
+                )}
+              </>
+            ) : task.status === 'downloading' ? (
+              <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => handlePause(task.id)}>
+                <Pause size={14} />
+                <span>Pause</span>
+              </button>
+            ) : (
+              <button className="btn-primary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => handleResume(task.id)}>
+                <Play size={14} />
+                <span>Resume</span>
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => window.pandaAPI && window.pandaAPI.closeStatusWindow()}>
+              Hide to Background
+            </button>
+            {task.status !== 'completed' && (
+              <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12, color: '#f43f5e', borderColor: 'rgba(244, 63, 94, 0.3)' }} onClick={async () => {
+                if (window.pandaAPI) {
+                  await window.pandaAPI.deleteTask(task.id, true);
+                  window.pandaAPI.closeStatusWindow();
+                }
+              }}>
+                <Trash2 size={14} />
+                <span>Cancel & Delete</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>

@@ -6,6 +6,7 @@ const { DownloadManager } = require('./downloader/manager');
 const settingsManager = require('./settings');
 
 let mainWindow = null;
+let statusWindow = null;
 let downloadManager = null;
 let tray = null;
 let lastClipboardText = '';
@@ -13,6 +14,60 @@ let loopbackServer = null;
 let isQuitting = false;
 
 const PORT = 45731;
+
+function showDownloadStatusWindow(taskId) {
+  if (statusWindow && !statusWindow.isDestroyed()) {
+    statusWindow.show();
+    statusWindow.focus();
+    if (taskId) {
+      statusWindow.webContents.send('set-active-status-task', taskId);
+    }
+    return;
+  }
+
+  const iconPath = path.join(__dirname, '../../assets/icon.png');
+  statusWindow = new BrowserWindow({
+    width: 600,
+    height: 410,
+    minWidth: 540,
+    minHeight: 380,
+    resizable: false,
+    maximizable: false,
+    alwaysOnTop: true, // Floats over all apps like IDM!
+    frame: false,
+    backgroundColor: '#070a12',
+    icon: iconPath,
+    skipTaskbar: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  const distHtml = path.join(__dirname, '../../dist/index.html');
+  const isViteDev = process.env.VITE_DEV === 'true';
+
+  if (isViteDev) {
+    statusWindow.loadURL('http://localhost:5173#status').catch(() => {
+      statusWindow.loadFile(distHtml, { hash: 'status' });
+    });
+  } else if (fs.existsSync(distHtml)) {
+    statusWindow.loadFile(distHtml, { hash: 'status' });
+  } else {
+    statusWindow.loadURL('http://localhost:5173#status');
+  }
+
+  statusWindow.webContents.once('did-finish-load', () => {
+    if (statusWindow && !statusWindow.isDestroyed() && taskId) {
+      statusWindow.webContents.send('set-active-status-task', taskId);
+    }
+  });
+
+  statusWindow.on('closed', () => {
+    statusWindow = null;
+  });
+}
 
 function createWindow() {
   const iconPath = path.join(__dirname, '../../assets/icon.png');
@@ -191,8 +246,12 @@ function startLoopbackServer() {
             if (settings.autoAcceptDownloads) {
               const task = downloadManager.createTask(data.url, {
                 filename: data.filename,
+                format: data.format,
+                quality: data.quality,
                 headers: data.headers || {}
               });
+
+              showDownloadStatusWindow(task.id);
 
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('task-status', { id: task.id, status: task.status, task: task.toJSON() });
@@ -262,13 +321,29 @@ function setupIpcHandlers() {
     return downloadManager.getAllTasks();
   });
 
-  ipcMain.handle('add-task', (event, { url, filename, connectionsCount, saveDirectory }) => {
+  ipcMain.handle('add-task', (event, { url, filename, format, quality, connectionsCount, saveDirectory }) => {
     const task = downloadManager.createTask(url, {
       filename,
+      format,
+      quality,
       connectionsCount,
       saveDirectory
     });
+    showDownloadStatusWindow(task.id);
     return task.toJSON();
+  });
+
+  ipcMain.handle('show-status-window', (event, taskId) => {
+    showDownloadStatusWindow(taskId);
+    return { success: true };
+  });
+
+  ipcMain.handle('close-status-window', () => {
+    if (statusWindow && !statusWindow.isDestroyed()) {
+      statusWindow.close();
+      statusWindow = null;
+    }
+    return { success: true };
   });
 
   ipcMain.handle('add-batch-tasks', (event, { urls, connectionsCount, saveDirectory }) => {
@@ -382,6 +457,9 @@ function setupManagerEventForwarding() {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(evt, data);
       }
+      if (statusWindow && !statusWindow.isDestroyed()) {
+        statusWindow.webContents.send(evt, data);
+      }
     });
   });
 
@@ -389,6 +467,9 @@ function setupManagerEventForwarding() {
   downloadManager.on('task-completed', (data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('task-completed', data);
+    }
+    if (statusWindow && !statusWindow.isDestroyed()) {
+      statusWindow.webContents.send('task-completed', data);
     }
 
     const settings = settingsManager.get();

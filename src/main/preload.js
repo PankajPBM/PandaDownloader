@@ -23,6 +23,14 @@ contextBridge.exposeInMainWorld('pandaAPI', {
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),
+  showStatusWindow: (taskId) => ipcRenderer.invoke('show-status-window', taskId),
+  closeStatusWindow: () => ipcRenderer.invoke('close-status-window'),
+
+  onActiveStatusTask: (callback) => {
+    const handler = (event, taskId) => callback(taskId);
+    ipcRenderer.on('set-active-status-task', handler);
+    return () => ipcRenderer.removeListener('set-active-status-task', handler);
+  },
 
   // Event listeners
   onProgress: (callback) => {

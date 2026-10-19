@@ -230,8 +230,17 @@
         .replace(/- YouTube$/i, '')
         .replace(/\| TikTok$/i, '')
         .replace(/\| Vimeo$/i, '')
-        .trim() || 'video';
-      targetUrl = window.location.href;
+      if (window.location.hostname.includes('youtube.com') || window.location.hostname.includes('youtu.be')) {
+        try {
+          const u = new URL(window.location.href);
+          const v = u.searchParams.get('v');
+          targetUrl = v ? `https://www.youtube.com/watch?v=${v}` : window.location.href;
+        } catch (e) {
+          targetUrl = window.location.href;
+        }
+      } else {
+        targetUrl = window.location.href;
+      }
       targetFilename = `${cleanTitle.replace(/[\\/:*?"<>|]/g, '_')}.${format}`;
     } else {
       // Generic websites: detect video src or network sniffer stream

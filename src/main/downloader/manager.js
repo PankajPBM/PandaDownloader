@@ -87,12 +87,15 @@ class DownloadManager extends EventEmitter {
     });
 
     task.on('completed', (data) => {
+      const json = task.toJSON();
       this.history.unshift({
-        ...task.toJSON(),
+        ...json,
+        status: 'completed',
         completedAt: new Date().toISOString()
       });
+      this.tasks.delete(task.id);
       this._saveHistory();
-      this.emit('task-completed', data);
+      this.emit('task-completed', { ...json, status: 'completed' });
       this._checkQueue();
     });
 
