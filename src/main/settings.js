@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
   speedLimitKBps: 0, // 0 = unlimited
   autoAcceptDownloads: false, // if true, starts immediately without confirmation dialog
   showCompletionDialog: true,
+  openFolderOnCompletion: false,
   minimizeToTray: true,
   capturedExtensions: [
     'mp4', 'webm', 'mkv', 'flv', 'avi', 'mov', 'wmv',

@@ -20,7 +20,6 @@ export default function App() {
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [activePopupTaskId, setActivePopupTaskId] = useState(null);
-  const [completionTask, setCompletionTask] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleteFileFromDisk, setDeleteFileFromDisk] = useState(false);
 
@@ -70,6 +69,8 @@ export default function App() {
     defaultSaveDir: '',
     autoCategorize: true,
     autoAcceptDownloads: false,
+    showCompletionDialog: true,
+    openFolderOnCompletion: false,
     defaultThreads: 16,
     maxConcurrent: 4,
     minimizeToTray: true,
@@ -138,9 +139,6 @@ export default function App() {
           }
           return prev;
         });
-        if (data.task) {
-          setActivePopupTaskId(data.task.id);
-        }
       });
 
       const unsubCompleted = window.pandaAPI.onCompleted((data) => {
@@ -155,14 +153,16 @@ export default function App() {
           if (exists) return prev.map(h => h.id === data.id ? { ...h, ...data, status: 'completed' } : h);
           return [{ ...data, status: 'completed' }, ...prev];
         });
-        setCompletionTask(data);
+        if (settings.openFolderOnCompletion && data.filePath) {
+          handleOpenFolder(data.filePath);
+        }
         setActivePopupTaskId(curr => curr === data.id ? null : curr);
       });
 
       let unsubActiveStatusTask = null;
       if (window.pandaAPI.onActiveStatusTask) {
         unsubActiveStatusTask = window.pandaAPI.onActiveStatusTask((taskId) => {
-          if (taskId) setActivePopupTaskId(taskId);
+          if (taskId && isStatusWindow) setActivePopupTaskId(taskId);
         });
       }
 
@@ -177,7 +177,6 @@ export default function App() {
           setShowAddModal(true);
         } else if (data && data.task) {
           setTasks(prev => [data.task, ...prev]);
-          setActivePopupTaskId(data.task.id);
         }
       });
 
@@ -259,7 +258,6 @@ export default function App() {
           const exists = prev.some(t => t.id === task.id);
           return exists ? prev : [task, ...prev];
         });
-        setActivePopupTaskId(task.id);
       }
     }
     setNewUrl('');
@@ -542,7 +540,7 @@ export default function App() {
 
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => window.pandaAPI && window.pandaAPI.closeStatusWindow()}>
-              Hide to Background
+              {task.status === 'completed' ? 'Close' : 'Hide to Background'}
             </button>
             {task.status !== 'completed' && (
               <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12, color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.3)' }} onClick={async () => {
@@ -1234,6 +1232,40 @@ export default function App() {
                 </label>
               </div>
 
+              <div className="settings-row">
+                <div>
+                  <div style={{ fontWeight: 600 }}>Show Completion Popup Dialog</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    Show floating status window when download finishes
+                  </div>
+                </div>
+                <label className="switch">
+                  <input 
+                    type="checkbox" 
+                    checked={settings.showCompletionDialog}
+                    onChange={e => setSettings(prev => ({ ...prev, showCompletionDialog: e.target.checked }))}
+                  />
+                  <span className="slider"></span>
+                </label>
+              </div>
+
+              <div className="settings-row">
+                <div>
+                  <div style={{ fontWeight: 600 }}>Open Folder Automatically When Done</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    Automatically open download directory in Explorer after completion
+                  </div>
+                </div>
+                <label className="switch">
+                  <input 
+                    type="checkbox" 
+                    checked={settings.openFolderOnCompletion}
+                    onChange={e => setSettings(prev => ({ ...prev, openFolderOnCompletion: e.target.checked }))}
+                  />
+                  <span className="slider"></span>
+                </label>
+              </div>
+
               <div className="form-group">
                 <label className="form-label">Captured File Types & Extensions (Comma-separated)</label>
                 <input 
@@ -1372,52 +1404,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* 5. DOWNLOAD COMPLETED CELEBRATION MODAL */}
-      {/* ============================================================== */}
-      {completionTask && (
-        <div className="modal-backdrop" onClick={() => setCompletionTask(null)}>
-          <div className="modal-card complete-card" onClick={e => e.stopPropagation()}>
-            <div className="complete-icon-ring">
-              <Check size={36} color="#10b981" />
-            </div>
 
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>Download Complete! 🐼</div>
-              <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4, maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {completionTask.filename}
-              </div>
-              <div style={{ fontSize: 12, color: '#10b981', marginTop: 2 }}>
-                {formatBytes(completionTask.totalBytes)} • High-Speed Muxed
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-              {completionTask.filePath && (
-                <>
-                  <button className="btn-primary" onClick={() => {
-                    handleOpenFile(completionTask.filePath);
-                    setCompletionTask(null);
-                  }}>
-                    <File size={15} />
-                    <span>Open File</span>
-                  </button>
-                  <button className="btn-secondary" onClick={() => {
-                    handleOpenFolder(completionTask.filePath);
-                    setCompletionTask(null);
-                  }}>
-                    <Folder size={15} />
-                    <span>Open Folder</span>
-                  </button>
-                </>
-              )}
-              <button className="btn-secondary" onClick={() => setCompletionTask(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ============================================================== */}
       {/* 6. DELETE CONFIRMATION MODAL */}

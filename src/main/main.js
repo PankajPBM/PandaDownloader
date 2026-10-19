@@ -506,6 +506,24 @@ function setupManagerEventForwarding() {
     }
 
     const settings = settingsManager.get();
+    
+    // Automatically open containing folder if user enabled this option in settings
+    if (settings.openFolderOnCompletion && data.filePath) {
+      try {
+        shell.showItemInFolder(data.filePath);
+      } catch (e) {
+        console.error('Failed to open folder on completion:', e);
+      }
+    }
+
+    // If user turned OFF completion dialogs, auto-close the status window
+    if (!settings.showCompletionDialog && statusWindow && !statusWindow.isDestroyed()) {
+      try {
+        statusWindow.close();
+        statusWindow = null;
+      } catch (e) {}
+    }
+
     if (settings.showCompletionDialog && Notification.isSupported()) {
       const notif = new Notification({
         title: 'Download Completed! 🐼',
