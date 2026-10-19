@@ -1046,6 +1046,43 @@ export default function App() {
               </div>
             </div>
 
+            {/* Browser Extension Integration */}
+            <div className="settings-group">
+              <div className="settings-group-title">Browser Integration (Chrome, Edge, Brave, Opera)</div>
+              <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 8, padding: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 32, height: 32, background: 'rgba(16, 185, 129, 0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
+                      🐼
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#f8fafc' }}>Panda Downloader Browser Extension</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>Universal video/audio sniffer & 1-click accelerated download capture</div>
+                    </div>
+                  </div>
+                  <button 
+                    className="btn-primary" 
+                    style={{ padding: '6px 14px', fontSize: 12 }}
+                    onClick={async () => {
+                      if (window.pandaAPI && window.pandaAPI.openExtensionFolder) {
+                        await window.pandaAPI.openExtensionFolder();
+                      }
+                    }}
+                  >
+                    <Download size={14} />
+                    <span>Install in Browser</span>
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 11, color: '#cbd5e1', lineHeight: '1.6' }}>
+                  <div style={{ fontWeight: 600, color: '#10b981', marginBottom: 2 }}>Quick 10-Second Setup:</div>
+                  <div>1. Clicking <strong>"Install in Browser"</strong> opens <code>chrome://extensions</code> and opens the extension folder on your screen.</div>
+                  <div>2. Turn ON <strong>"Developer mode"</strong> (switch in top-right of Chrome/Edge/Brave).</div>
+                  <div>3. Drag the opened <code>extension</code> folder directly into your browser window (or click <strong>"Load unpacked"</strong>). Done!</div>
+                </div>
+              </div>
+            </div>
+
             {/* Connection Section */}
             <div className="settings-group">
               <div className="settings-group-title">Connection & Performance</div>

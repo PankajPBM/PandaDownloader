@@ -55,6 +55,7 @@ Source: "..\extension\*"; DestDir: "{app}\extension"; Flags: ignoreversion recur
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"
+Name: "{group}\Install Browser Extension"; Filename: "{app}\extension"; IconFilename: "{app}\assets\icon.ico"
 Name: "{group}\PB Tech Zone Website"; Filename: "{#MyAppURL}"
 Name: "{group}\WhatsApp Support"; Filename: "{#MyAppWhatsApp}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
@@ -70,9 +71,10 @@ Root: HKA; Subkey: "Software\Classes\pandadl"; ValueType: string; ValueName: "UR
 Root: HKA; Subkey: "Software\Classes\pandadl\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\assets\icon.ico,0"
 Root: HKA; Subkey: "Software\Classes\pandadl\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 
-; Chrome & Edge Native Messaging Host Registration
+; Chrome, Edge & Brave Native Messaging Host Registration
 Root: HKLM; Subkey: "Software\Google\Chrome\NativeMessagingHosts\com.panda.downloader"; ValueType: string; ValueName: ""; ValueData: "{app}\extension\native-messaging\com.panda.downloader.json"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\com.panda.downloader"; ValueType: string; ValueName: ""; ValueData: "{app}\extension\native-messaging\com.panda.downloader.json"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.panda.downloader"; ValueType: string; ValueName: ""; ValueData: "{app}\extension\native-messaging\com.panda.downloader.json"; Flags: uninsdeletekey
 
 [Run]
 ; Add Windows Firewall Exception for Local Daemon Port 45731

@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('pandaAPI', {
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openExtensionFolder: () => ipcRenderer.invoke('open-extension-folder'),
 
   // Window control
   minimize: () => ipcRenderer.invoke('window-minimize'),

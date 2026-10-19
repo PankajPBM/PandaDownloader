@@ -337,6 +337,18 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle('open-extension-folder', () => {
+    let extDir = path.resolve(__dirname, '../../extension');
+    if (!fs.existsSync(extDir)) {
+      const prodPath = path.join(path.dirname(process.execPath), 'extension');
+      if (fs.existsSync(prodPath)) extDir = prodPath;
+    }
+    shell.openPath(extDir);
+    clipboard.writeText(extDir);
+    shell.openExternal('chrome://extensions');
+    return { path: extDir, success: true };
+  });
+
   // Window Controls
   ipcMain.handle('window-minimize', () => {
     if (mainWindow) mainWindow.minimize();

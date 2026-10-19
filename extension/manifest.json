@@ -2,7 +2,13 @@
   "manifest_version": 3,
   "name": "Panda Downloader Integration Module",
   "version": "1.0.0",
-  "description": "Automatically detect and capture high-speed video, audio, and file downloads directly with Panda Downloader.",
+  "description": "Automatically detect and capture high-speed video, audio, and file downloads directly with Panda Downloader by PB Tech Zone.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "webRequest",
     "nativeMessaging",
@@ -26,7 +32,19 @@
     }
   ],
   "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
     "default_title": "Panda Downloader Media Sniffer",
     "default_popup": "popup/popup.html"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

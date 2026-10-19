@@ -41,12 +41,12 @@
     const isAudio = mediaInfo.type === 'audio';
     const label = isAudio ? 'Download Audio' : 'Download this video';
 
-    const panel = document.createElement('div');
+    const logoUrl = chrome.runtime.getURL('icons/icon16.png');
     panel.id = 'panda-idm-video-panel';
     panel.className = 'panda-idm-panel';
     panel.innerHTML = `
       <div class="panda-idm-header" id="panda-trigger-btn">
-        <span class="panda-idm-logo">🐼</span>
+        <img src="${logoUrl}" style="width: 16px; height: 16px; border-radius: 3px; object-fit: contain;" alt="Panda">
         <span class="panda-idm-label">${label}</span>
         <span class="panda-idm-arrow">▼</span>
       </div>
