@@ -45,8 +45,8 @@ VersionInfoCopyright=Copyright (C) 2026 PB Tech Zone
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
-Name: "autostart"; Description: "Launch Panda Downloader background daemon on Windows startup"; GroupDescription: "System Integration:"; Flags: checkedonce
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "autostart"; Description: "Launch Panda Downloader background daemon on Windows startup"; GroupDescription: "System Integration:"
 
 [Files]
 ; Main application binaries and electron runtime
@@ -63,6 +63,7 @@ Name: "{group}\PB Tech Zone Website"; Filename: "{#MyAppURL}"
 Name: "{group}\WhatsApp Support"; Filename: "{#MyAppWhatsApp}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: desktopicon
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: desktopicon
 
 [Registry]
 ; Windows Run on startup
