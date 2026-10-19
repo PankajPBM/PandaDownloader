@@ -414,13 +414,13 @@ export default function App() {
     const isDone = task.status === 'completed';
 
     return (
-      <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 14, background: 'var(--bg-secondary)', color: 'var(--text-main)', userSelect: 'none', border: '1px solid var(--border-focus)', borderRadius: 10, boxSizing: 'border-box', overflow: 'hidden' }}>
-        {/* Draggable Titlebar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--border-subtle)', WebkitAppRegion: 'drag', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 20 }}>⚡</span>
+      <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 12, background: 'var(--bg-secondary)', color: 'var(--text-main)', userSelect: 'none', border: '1px solid var(--border-focus)', borderRadius: 10, boxSizing: 'border-box', overflow: 'hidden' }}>
+        {/* Pinned Draggable Titlebar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 6, borderBottom: '1px solid var(--border-subtle)', WebkitAppRegion: 'drag', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 18 }}>⚡</span>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)', maxWidth: 440, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)', maxWidth: 460, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {isDone ? `Download Complete: ${task.filename || 'File'}` : `Download Status: ${task.filename || 'File'}`}
               </div>
               <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Dynamic Range Segmentation Engine</div>
@@ -436,83 +436,86 @@ export default function App() {
           </div>
         </div>
 
-        {/* Grid info */}
-        <div className="idm-grid" style={{ marginTop: 10 }}>
-          <span className="idm-grid-label">File Name:</span>
-          <span className="idm-grid-value" title={task.filename} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.filename || task.url}</span>
+        {/* Scrollable Body Container - always 100% visible and smoothly scrollable at any window size */}
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 8, margin: '6px 0' }}>
+          {/* Grid info */}
+          <div className="idm-grid" style={{ marginTop: 2 }}>
+            <span className="idm-grid-label">File Name:</span>
+            <span className="idm-grid-value" title={task.filename} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.filename || task.url}</span>
 
-          <span className="idm-grid-label">Status:</span>
-          <span className="idm-grid-value" style={{ textTransform: 'capitalize', color: isDone ? '#10b981' : task.status === 'downloading' ? '#06b6d4' : '#f59e0b', fontWeight: 700 }}>
-            {task.status}
-          </span>
+            <span className="idm-grid-label">Status:</span>
+            <span className="idm-grid-value" style={{ textTransform: 'capitalize', color: isDone ? '#10b981' : task.status === 'downloading' ? '#06b6d4' : '#f59e0b', fontWeight: 700 }}>
+              {task.status}
+            </span>
 
-          <span className="idm-grid-label">File Size:</span>
-          <span className="idm-grid-value">{formatBytes(task.totalBytes)}</span>
+            <span className="idm-grid-label">File Size:</span>
+            <span className="idm-grid-value">{formatBytes(task.totalBytes)}</span>
 
-          <span className="idm-grid-label">Downloaded:</span>
-          <span className="idm-grid-value">{formatBytes(task.downloadedBytes)} ({Math.floor(task.percent || 0)}%)</span>
+            <span className="idm-grid-label">Downloaded:</span>
+            <span className="idm-grid-value">{formatBytes(task.downloadedBytes)} ({Math.floor(task.percent || 0)}%)</span>
 
-          <span className="idm-grid-label">Transfer Rate:</span>
-          <span className="idm-grid-value" style={{ color: '#06b6d4', fontWeight: 700 }}>
-            {task.status === 'downloading' ? formatSpeed(task.speed) : '0 KB/s'}
-          </span>
+            <span className="idm-grid-label">Transfer Rate:</span>
+            <span className="idm-grid-value" style={{ color: '#06b6d4', fontWeight: 700 }}>
+              {task.status === 'downloading' ? formatSpeed(task.speed) : '0 KB/s'}
+            </span>
 
-          <span className="idm-grid-label">Time Left (ETA):</span>
-          <span className="idm-grid-value">{isDone ? '--' : formatETA(task.eta)}</span>
+            <span className="idm-grid-label">Time Left (ETA):</span>
+            <span className="idm-grid-value">{isDone ? '--' : formatETA(task.eta)}</span>
 
-          <span className="idm-grid-label">Resume Capability:</span>
-          <span className="idm-grid-value" style={{ color: task.supportsRange ? '#10b981' : '#f59e0b' }}>
-            {task.supportsRange ? '✓ Yes (HTTP Range)' : 'Limited / Single Stream'}
-          </span>
+            <span className="idm-grid-label">Resume Capability:</span>
+            <span className="idm-grid-value" style={{ color: task.supportsRange ? '#10b981' : '#f59e0b' }}>
+              {task.supportsRange ? '✓ Yes (HTTP Range)' : 'Limited / Single Stream'}
+            </span>
 
-          {task.filePath && (
-            <>
-              <span className="idm-grid-label">Save To:</span>
-              <span className="idm-grid-value" title={task.filePath} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.filePath}</span>
-            </>
+            {task.filePath && (
+              <>
+                <span className="idm-grid-label">Save To:</span>
+                <span className="idm-grid-value" title={task.filePath} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.filePath}</span>
+              </>
+            )}
+          </div>
+
+          {/* Master Shimmer Progress Bar */}
+          <div className="idm-shimmer-track">
+            <div 
+              className="idm-shimmer-fill" 
+              style={{ width: `${Math.min(100, task.percent || 0)}%` }}
+            />
+            <div className="idm-shimmer-text">
+              {Math.floor(task.percent || 0)}% Completed
+            </div>
+          </div>
+
+          {/* Active Connections Dynamic Streams (2-column IDM style) */}
+          {task.segments && task.segments.length > 0 && (
+            <div className="idm-segments-panel" style={{ padding: '6px 10px', borderRadius: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
+                  Active Segment Streams ({task.segments.length} Threads)
+                </span>
+                <span style={{ fontSize: 10, color: '#10b981', fontWeight: 600 }}>
+                  {isDone ? 'All Segments Merged & Verified' : 'Dynamic Range Chunking'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 14, rowGap: 2 }}>
+                {task.segments.map((seg, idx) => (
+                  <div key={idx} className="idm-segment-row" style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '1px 0' }}>
+                    <span style={{ width: 46, color: 'var(--text-muted)', fontSize: 10, flexShrink: 0 }}>Conn {idx + 1}:</span>
+                    <div className="idm-segment-bar" style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                      <div className="idm-segment-fill" style={{ width: `${Math.min(100, isDone ? 100 : (seg.percent || 0))}%`, height: '100%', background: '#10b981' }} />
+                    </div>
+                    <span style={{ width: 34, textAlign: 'right', color: 'var(--text-main)', fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
+                      {Math.floor(isDone ? 100 : (seg.percent || 0))}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Master Shimmer Progress Bar */}
-        <div className="idm-shimmer-track" style={{ margin: '8px 0' }}>
-          <div 
-            className="idm-shimmer-fill" 
-            style={{ width: `${Math.min(100, task.percent || 0)}%` }}
-          />
-          <div className="idm-shimmer-text">
-            {Math.floor(task.percent || 0)}% Completed
-          </div>
-        </div>
-
-        {/* Active Connections Dynamic Streams (2-column IDM style) */}
-        {task.segments && task.segments.length > 0 && (
-          <div className="idm-segments-panel" style={{ padding: '6px 10px', borderRadius: 8, margin: '4px 0', flexShrink: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
-                Active Segment Streams ({task.segments.length} Threads)
-              </span>
-              <span style={{ fontSize: 10, color: '#10b981', fontWeight: 600 }}>
-                {isDone ? 'All Segments Merged & Verified' : 'Dynamic Range Chunking'}
-              </span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 14, rowGap: 2 }}>
-              {task.segments.map((seg, idx) => (
-                <div key={idx} className="idm-segment-row" style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '1px 0' }}>
-                  <span style={{ width: 46, color: 'var(--text-muted)', fontSize: 10, flexShrink: 0 }}>Conn {idx + 1}:</span>
-                  <div className="idm-segment-bar" style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
-                    <div className="idm-segment-fill" style={{ width: `${Math.min(100, isDone ? 100 : (seg.percent || 0))}%`, height: '100%', background: '#10b981' }} />
-                  </div>
-                  <span style={{ width: 34, textAlign: 'right', color: 'var(--text-main)', fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
-                    {Math.floor(isDone ? 100 : (seg.percent || 0))}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, marginTop: 'auto', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+        {/* Pinned Bottom Action Buttons */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             {isDone ? (
               <>
