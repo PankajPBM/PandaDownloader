@@ -170,67 +170,71 @@ try {
 // Sniff network responses for video, audio, and large download streams
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
-    if (details.tabId < 0) return;
+    try {
+      if (details.tabId < 0) return;
 
-    let contentType = '';
-    let contentLength = 0;
-    let contentDisposition = '';
+      let contentType = '';
+      let contentLength = 0;
+      let contentDisposition = '';
 
-    for (const h of details.responseHeaders || []) {
-      const name = h.name.toLowerCase();
-      if (name === 'content-type') contentType = h.value || '';
-      if (name === 'content-length') contentLength = parseInt(h.value || '0', 10);
-      if (name === 'content-disposition') contentDisposition = h.value || '';
-    }
-
-    const isMediaMime = MEDIA_MIME_PATTERNS.some(pat => pat.test(contentType));
-    const isMediaExt = MEDIA_EXTENSIONS.test(details.url);
-    const isAttachment = contentDisposition.includes('attachment');
-
-    // Filter out UI sound effects and tiny chunks (< 150KB unless explicit streaming playlist like m3u8)
-    const isStreamManifest = details.url.includes('.m3u8') || details.url.includes('.mpd');
-    if (!isStreamManifest && contentLength > 0 && contentLength < 150000) {
-      return;
-    }
-
-    if (isMediaMime || isMediaExt || isAttachment) {
-      let mediaList = tabMediaMap.get(details.tabId) || [];
-
-      // Avoid duplicates
-      if (!mediaList.some(item => item.url === details.url)) {
-        const titleMatch = contentDisposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
-        let filename = titleMatch ? decodeURIComponent(titleMatch[1].trim()) : '';
-        if (!filename) {
-          try {
-            const parsed = new URL(details.url);
-            filename = parsed.pathname.split('/').filter(Boolean).pop() || 'media_stream';
-          } catch (e) {
-            filename = 'media_stream';
-          }
-        }
-
-        const mediaItem = {
-          url: details.url,
-          filename: filename,
-          contentType: contentType,
-          size: contentLength,
-          tabId: details.tabId,
-          timestamp: Date.now()
-        };
-
-        mediaList.push(mediaItem);
-        tabMediaMap.set(details.tabId, mediaList);
-
-        // Update badge count safely
-        try {
-          chrome.action.setBadgeText({ tabId: details.tabId, text: `${mediaList.length}` }, () => {
-            if (chrome.runtime.lastError) {}
-          });
-          chrome.action.setBadgeBackgroundColor({ tabId: details.tabId, color: '#10b981' }, () => {
-            if (chrome.runtime.lastError) {}
-          });
-        } catch (e) {}
+      for (const h of details.responseHeaders || []) {
+        const name = h.name.toLowerCase();
+        if (name === 'content-type') contentType = h.value || '';
+        if (name === 'content-length') contentLength = parseInt(h.value || '0', 10);
+        if (name === 'content-disposition') contentDisposition = h.value || '';
       }
+
+      const isMediaMime = MEDIA_MIME_PATTERNS.some(pat => pat.test(contentType));
+      const isMediaExt = DOWNLOAD_EXTENSIONS.test(details.url);
+      const isAttachment = contentDisposition.includes('attachment');
+
+      // Filter out UI sound effects and tiny chunks (< 150KB unless explicit streaming playlist like m3u8)
+      const isStreamManifest = details.url.includes('.m3u8') || details.url.includes('.mpd');
+      if (!isStreamManifest && contentLength > 0 && contentLength < 150000) {
+        return;
+      }
+
+      if (isMediaMime || isMediaExt || isAttachment) {
+        let mediaList = tabMediaMap.get(details.tabId) || [];
+
+        // Avoid duplicates
+        if (!mediaList.some(item => item.url === details.url)) {
+          const titleMatch = contentDisposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
+          let filename = titleMatch ? decodeURIComponent(titleMatch[1].trim()) : '';
+          if (!filename) {
+            try {
+              const parsed = new URL(details.url);
+              filename = parsed.pathname.split('/').filter(Boolean).pop() || 'media_stream';
+            } catch (e) {
+              filename = 'media_stream';
+            }
+          }
+
+          const mediaItem = {
+            url: details.url,
+            filename: filename,
+            contentType: contentType,
+            size: contentLength,
+            tabId: details.tabId,
+            timestamp: Date.now()
+          };
+
+          mediaList.push(mediaItem);
+          tabMediaMap.set(details.tabId, mediaList);
+
+          // Update badge count safely
+          try {
+            chrome.action.setBadgeText({ tabId: details.tabId, text: `${mediaList.length}` }, () => {
+              if (chrome.runtime.lastError) {}
+            });
+            chrome.action.setBadgeBackgroundColor({ tabId: details.tabId, color: '#10b981' }, () => {
+              if (chrome.runtime.lastError) {}
+            });
+          } catch (e) {}
+        }
+      }
+    } catch (err) {
+      console.warn('[Panda Downloader] onHeadersReceived error:', err);
     }
   },
   { urls: ['<all_urls>'] },
@@ -257,6 +261,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const list = tabMediaMap.get(tabId) || [];
     sendResponse({ media: list });
     return true;
+  }
+
+  if (message.action === 'PROBE_VIDEO_FORMATS') {
+    const videoUrl = message.url;
+    fetch(`http://127.0.0.1:45731/api/probe?url=${encodeURIComponent(videoUrl)}`)
+      .then(r => r.json())
+      .then(data => sendResponse({ success: true, data }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true; // Keep message channel open for async response
   }
 
   if (message.action === 'DOWNLOAD_WITH_PANDA') {

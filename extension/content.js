@@ -165,7 +165,74 @@
       }
     } catch (e) {}
 
-    // Extract YouTube formats and exact stream byte sizes directly from in-page player response
+    // Extract YouTube formats and exact stream byte sizes
+    const parseStreamingData = (sd) => {
+      if (!sd || !sd.adaptiveFormats) return null;
+      let bestAudioBytes = 0;
+      const audioFormats = sd.adaptiveFormats.filter(f => f.mimeType && f.mimeType.startsWith('audio/'));
+      for (const a of audioFormats) {
+        const sz = parseInt(a.contentLength, 10) || (a.approxDurationMs && a.bitrate ? Math.round(a.bitrate * parseInt(a.approxDurationMs, 10) / 8000) : 0);
+        if (sz > bestAudioBytes) bestAudioBytes = sz;
+      }
+
+      const videoMap = new Map();
+      for (const f of sd.adaptiveFormats) {
+        if (!f.mimeType || !f.mimeType.startsWith('video/') || !f.height) continue;
+        const h = f.height;
+        const fSize = parseInt(f.contentLength, 10) || (f.approxDurationMs && f.bitrate ? Math.round(f.bitrate * parseInt(f.approxDurationMs, 10) / 8000) : 0);
+        const existing = videoMap.get(h);
+        const exSize = existing ? (parseInt(existing.contentLength, 10) || 0) : 0;
+        if (!existing || (f.mimeType.includes('mp4') && !existing.mimeType.includes('mp4')) || fSize > exSize) {
+          videoMap.set(h, f);
+        }
+      }
+
+      const getMeta = (h) => {
+        if (h >= 4320) return { badge: '8K', label: '8K Ultra HD (MP4)' };
+        if (h >= 2160) return { badge: '4K', label: '4K Ultra HD (MP4)' };
+        if (h >= 1440) return { badge: '2K', label: '2K Quad HD (MP4)' };
+        if (h >= 1080) return { badge: '1080p', label: 'Full HD Video (MP4)' };
+        if (h >= 720) return { badge: '720p', label: 'HD Video (MP4)' };
+        if (h >= 480) return { badge: '480p', label: 'Standard Video (MP4)' };
+        if (h >= 360) return { badge: '360p', label: 'Medium Video (MP4)' };
+        if (h >= 240) return { badge: '240p', label: 'Small Video (MP4)' };
+        return { badge: `${h}p`, label: `${h}p Video (MP4)` };
+      };
+
+      const sortedHeights = Array.from(videoMap.keys()).sort((a, b) => b - a);
+      if (sortedHeights.length === 0) return null;
+
+      const formats = [];
+      for (const h of sortedHeights) {
+        const f = videoMap.get(h);
+        const meta = getMeta(h);
+        let totalBytes = parseInt(f.contentLength, 10) || (f.approxDurationMs && f.bitrate ? Math.round(f.bitrate * parseInt(f.approxDurationMs, 10) / 8000) : 0);
+        if (totalBytes > 0) totalBytes += bestAudioBytes;
+        formats.push({
+          quality: `${h}p`,
+          height: h,
+          badge: meta.badge,
+          label: meta.label,
+          format: 'mp4',
+          size: totalBytes,
+          sizeFormatted: formatBytes(totalBytes)
+        });
+      }
+
+      formats.push({
+        quality: 'audio',
+        height: 0,
+        badge: 'AUDIO',
+        label: 'Extract Audio (MP3)',
+        format: 'mp3',
+        size: bestAudioBytes,
+        sizeFormatted: formatBytes(bestAudioBytes),
+        isAudio: true
+      });
+
+      return formats;
+    };
+
     const getYouTubeInPageFormats = () => {
       try {
         for (const s of document.scripts) {
@@ -174,70 +241,7 @@
             const m = txt.match(/ytInitialPlayerResponse\s*=\s*({.+?});(?:\s*var|\s*<\/script|\s*$)/s);
             if (m && m[1]) {
               const resp = JSON.parse(m[1]);
-              const sd = resp.streamingData;
-              if (sd && sd.adaptiveFormats) {
-                let bestAudioBytes = 0;
-                const audioFormats = sd.adaptiveFormats.filter(f => f.mimeType && f.mimeType.startsWith('audio/'));
-                for (const a of audioFormats) {
-                  const sz = parseInt(a.contentLength, 10) || (a.approxDurationMs && a.bitrate ? Math.round(a.bitrate * parseInt(a.approxDurationMs, 10) / 8000) : 0);
-                  if (sz > bestAudioBytes) bestAudioBytes = sz;
-                }
-
-                const videoMap = new Map();
-                for (const f of sd.adaptiveFormats) {
-                  if (!f.mimeType || !f.mimeType.startsWith('video/') || !f.height) continue;
-                  const h = f.height;
-                  const fSize = parseInt(f.contentLength, 10) || (f.approxDurationMs && f.bitrate ? Math.round(f.bitrate * parseInt(f.approxDurationMs, 10) / 8000) : 0);
-                  const existing = videoMap.get(h);
-                  const exSize = existing ? (parseInt(existing.contentLength, 10) || 0) : 0;
-                  if (!existing || (f.mimeType.includes('mp4') && !existing.mimeType.includes('mp4')) || fSize > exSize) {
-                    videoMap.set(h, f);
-                  }
-                }
-
-                const getMeta = (h) => {
-                  if (h >= 4320) return { badge: '8K', label: '8K Ultra HD (MP4)' };
-                  if (h >= 2160) return { badge: '4K', label: '4K Ultra HD (MP4)' };
-                  if (h >= 1440) return { badge: '2K', label: '2K Quad HD (MP4)' };
-                  if (h >= 1080) return { badge: '1080p', label: 'Full HD Video (MP4)' };
-                  if (h >= 720) return { badge: '720p', label: 'HD Video (MP4)' };
-                  if (h >= 480) return { badge: '480p', label: 'Standard Video (MP4)' };
-                  if (h >= 360) return { badge: '360p', label: 'Medium Video (MP4)' };
-                  if (h >= 240) return { badge: '240p', label: 'Small Video (MP4)' };
-                  return { badge: `${h}p`, label: `${h}p Video (MP4)` };
-                };
-
-                const sortedHeights = Array.from(videoMap.keys()).sort((a, b) => b - a);
-                const formats = [];
-                for (const h of sortedHeights) {
-                  const f = videoMap.get(h);
-                  const meta = getMeta(h);
-                  let totalBytes = parseInt(f.contentLength, 10) || (f.approxDurationMs && f.bitrate ? Math.round(f.bitrate * parseInt(f.approxDurationMs, 10) / 8000) : 0);
-                  if (totalBytes > 0) totalBytes += bestAudioBytes;
-                  formats.push({
-                    quality: `${h}p`,
-                    height: h,
-                    badge: meta.badge,
-                    label: meta.label,
-                    format: 'mp4',
-                    size: totalBytes,
-                    sizeFormatted: formatBytes(totalBytes)
-                  });
-                }
-
-                formats.push({
-                  quality: 'audio',
-                  height: 0,
-                  badge: 'AUDIO',
-                  label: 'Extract Audio (MP3)',
-                  format: 'mp3',
-                  size: bestAudioBytes,
-                  sizeFormatted: formatBytes(bestAudioBytes),
-                  isAudio: true
-                });
-
-                return formats;
-              }
+              return parseStreamingData(resp.streamingData);
             }
           }
         }
@@ -245,18 +249,36 @@
       return null;
     };
 
+    // Query active live YouTube player in page context
+    const requestYouTubePlayerResponse = () => {
+      try {
+        const s = document.createElement('script');
+        s.textContent = `
+          try {
+            const player = document.getElementById('movie_player');
+            const resp = (player && typeof player.getPlayerResponse === 'function') ? player.getPlayerResponse() : window.ytInitialPlayerResponse;
+            if (resp && resp.streamingData) {
+              window.postMessage({ type: 'PANDA_YT_STREAMING_DATA', streamingData: resp.streamingData }, '*');
+            }
+          } catch (e) {}
+        `;
+        (document.head || document.documentElement).appendChild(s);
+        s.remove();
+      } catch (e) {}
+    };
+
     let probedFormatsCache = null;
     const fetchProbedFormats = (videoUrl, callback) => {
       if (probedFormatsCache) return callback(probedFormatsCache);
-      fetch(`http://127.0.0.1:45731/api/probe?url=${encodeURIComponent(videoUrl)}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data && data.formats && data.formats.length > 0) {
-            probedFormatsCache = data.formats;
+      try {
+        chrome.runtime.sendMessage({ action: 'PROBE_VIDEO_FORMATS', url: videoUrl }, (res) => {
+          if (chrome.runtime.lastError) return;
+          if (res && res.success && res.data && res.data.formats && res.data.formats.length > 0) {
+            probedFormatsCache = res.data.formats;
             callback(probedFormatsCache);
           }
-        })
-        .catch(() => {});
+        });
+      } catch (e) {}
     };
 
     panel = document.createElement('div');
@@ -366,6 +388,20 @@
       renderFormatsList(inPageFormats);
     }
 
+    // Listen for live YouTube player responses from main-world bridge
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'PANDA_YT_STREAMING_DATA' && event.data.streamingData) {
+        const parsed = parseStreamingData(event.data.streamingData);
+        if (parsed && parsed.length > 0) {
+          renderFormatsList(parsed);
+        }
+      }
+    });
+
+    if (isVideoPortal && window.location.hostname.includes('youtube.com')) {
+      requestYouTubePlayerResponse();
+    }
+
     // 2. Initial stream render if already cached
     renderStreamsList(cachedMediaStreams);
 
@@ -378,6 +414,9 @@
     triggerBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
+      if (isVideoPortal && window.location.hostname.includes('youtube.com')) {
+        requestYouTubePlayerResponse();
+      }
       fetchTabMedia((freshStreams) => {
         renderStreamsList(freshStreams);
       });

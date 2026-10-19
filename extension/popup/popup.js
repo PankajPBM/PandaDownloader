@@ -131,28 +131,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       } catch (e) {}
 
-      fetch(`http://127.0.0.1:45731/api/probe?url=${encodeURIComponent(videoUrl)}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data && data.formats && data.formats.length > 0) {
-            const portalItems = data.formats.map(f => ({
-              url: videoUrl,
-              filename: `${cleanTitle}.${f.format || 'mp4'}`,
-              format: f.format || 'mp4',
-              quality: f.quality,
-              displayType: f.label,
-              sizeStr: f.sizeFormatted,
-              isPrimary: true
-            }));
-            displayList.unshift(...portalItems);
-            renderItems();
-          } else {
-            renderItems();
-          }
-        })
-        .catch(() => {
+      chrome.runtime.sendMessage({ action: 'PROBE_VIDEO_FORMATS', url: videoUrl }, (res) => {
+        if (chrome.runtime.lastError) {
           renderItems();
-        });
+          return;
+        }
+        if (res && res.success && res.data && res.data.formats && res.data.formats.length > 0) {
+          const portalItems = res.data.formats.map(f => ({
+            url: videoUrl,
+            filename: `${cleanTitle}.${f.format || 'mp4'}`,
+            format: f.format || 'mp4',
+            quality: f.quality,
+            displayType: f.label,
+            sizeStr: f.sizeFormatted,
+            isPrimary: true
+          }));
+          displayList.unshift(...portalItems);
+          renderItems();
+        } else {
+          renderItems();
+        }
+      });
     } else {
       renderItems();
     }
