@@ -292,6 +292,14 @@ function startLoopbackServer() {
     res.end();
   });
 
+  loopbackServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[Panda Downloader] Port ${PORT} already in use. Primary instance daemon is active.`);
+    } else {
+      console.error('[Panda Downloader] Loopback server error:', err);
+    }
+  });
+
   loopbackServer.listen(PORT, '127.0.0.1', () => {
     console.log(`[Panda Downloader] Background daemon listening on http://127.0.0.1:${PORT}`);
   });
@@ -497,28 +505,46 @@ function setupManagerEventForwarding() {
   });
 }
 
-app.whenReady().then(() => {
-  downloadManager = new DownloadManager();
-  setupManagerEventForwarding();
-  setupIpcHandlers();
-  startLoopbackServer();
-  startClipboardMonitor();
-  createWindow();
-  createTray();
+const gotTheLock = app.requestSingleInstanceLock();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+if (!gotTheLock) {
+  // Another instance is already running; exit gracefully without conflict
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Focus the existing main window if another instance was launched
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
-});
 
-app.on('before-quit', () => {
-  isQuitting = true;
-});
+  app.whenReady().then(() => {
+    downloadManager = new DownloadManager();
+    setupManagerEventForwarding();
+    setupIpcHandlers();
+    startLoopbackServer();
+    startClipboardMonitor();
+    createWindow();
+    createTray();
 
-app.on('window-all-closed', () => {
-  const settings = settingsManager.get();
-  if (!settings.minimizeToTray || isQuitting) {
-    if (loopbackServer) loopbackServer.close();
-    app.quit();
-  }
-});
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on('before-quit', () => {
+    isQuitting = true;
+  });
+
+  app.on('window-all-closed', () => {
+    const settings = settingsManager.get();
+    if (!settings.minimizeToTray || isQuitting) {
+      if (loopbackServer) {
+        try { loopbackServer.close(); } catch (e) {}
+      }
+      app.quit();
+    }
+  });
+}
