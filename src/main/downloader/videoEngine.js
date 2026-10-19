@@ -106,7 +106,7 @@ class VideoDownloadTask extends EventEmitter {
         '--no-playlist',
         '--windows-filenames',
         '--no-mtime',
-        '--progress-template', 'PANDA:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.speed)s:%(progress._percent_str)s',
+        '--progress-template', 'PANDA:%(progress.downloaded_bytes)s:%(progress.total_bytes,progress.total_bytes_estimate)s:%(progress.speed)s:%(progress._percent_str)s:%(progress.eta)s',
         '-N', String(this.connectionsCount),
         '-P', this.saveDirectory,
         '-o', '%(title)s.%(ext)s'
@@ -128,6 +128,23 @@ class VideoDownloadTask extends EventEmitter {
 
       this.process = spawn(YTDLP_PATH, args, { windowsHide: true });
 
+      const emitLiveProgress = () => {
+        if (this.totalBytes > 0 && this.downloadedBytes > 0 && this.percent <= 0) {
+          this.percent = Math.min(99, (this.downloadedBytes / this.totalBytes) * 100);
+        }
+        if (this.totalBytes > 0 && this.speed > 0 && (!this.eta || this.eta <= 0)) {
+          const remaining = Math.max(0, this.totalBytes - this.downloadedBytes);
+          this.eta = Math.round(remaining / this.speed);
+        }
+        this.segments.forEach((seg, i) => {
+          const jitter = ((i * 3) % 7) - 3;
+          seg.percent = Math.min(100, Math.max(0, Math.floor(this.percent + jitter)));
+        });
+        const prog = this.getProgress();
+        this.emit('progress', prog);
+        this.emit('speed', { speed: this.speed, progress: prog });
+      };
+
       this.process.stdout.on('data', (data) => {
         const text = data.toString();
         const lines = text.split('\n');
@@ -144,34 +161,54 @@ class VideoDownloadTask extends EventEmitter {
               const spd = parseFloat(parts[3]) || 0;
               const pctStr = parts[4].replace('%', '').trim();
               const pct = parseFloat(pctStr) || 0;
+              const etaSec = parseInt(parts[5] || '0', 10) || 0;
 
-              this.speed = spd;
+              if (spd > 0) this.speed = spd;
+              if (etaSec > 0) this.eta = etaSec;
 
-              // Smoothly map video (0%-88%) and audio (88%-98%) tracks
               if (this.streamPhase === 1) {
-                this.videoDownloaded = down;
+                if (down > 0) this.videoDownloaded = down;
                 if (total > 0) this.videoTotal = total;
-                this.percent = pct * 0.88;
+                this.percent = pct > 0 ? (pct * 0.88) : this.percent;
                 this.downloadedBytes = down;
                 this.totalBytes = this.videoTotal;
               } else if (this.streamPhase === 2) {
-                this.audioDownloaded = down;
+                if (down > 0) this.audioDownloaded = down;
                 if (total > 0) this.audioTotal = total;
-                this.percent = 88 + (pct * 0.10);
+                this.percent = pct > 0 ? (88 + (pct * 0.10)) : this.percent;
                 this.downloadedBytes = this.videoDownloaded + down;
                 this.totalBytes = this.videoTotal + this.audioTotal;
+              } else {
+                if (down > 0) this.downloadedBytes = down;
+                if (total > 0) this.totalBytes = total;
+                if (pct > 0) this.percent = pct;
               }
 
-              // Update segment visualization with dynamic live activity
-              this.segments.forEach((seg, i) => {
-                const jitter = ((i * 3) % 5) - 2;
-                seg.percent = Math.min(100, Math.max(0, this.percent + jitter));
-              });
+              emitLiveProgress();
+            }
+          } else if (trimmed.startsWith('[download]') && trimmed.includes('%')) {
+            // Regex fallback for standard yt-dlp download lines
+            const m = trimmed.match(/\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+)\s*(\w+)\s+at\s+([\d.]+)\s*(\w+\/s)(?:\s+ETA\s+([\d:]+))?/i);
+            if (m) {
+              const pct = parseFloat(m[1]) || 0;
+              const sizeVal = parseFloat(m[2]) || 0;
+              const sizeUnit = (m[3] || '').toLowerCase();
+              const spdVal = parseFloat(m[4]) || 0;
+              const spdUnit = (m[5] || '').toLowerCase();
 
-              // Emit progress AND speed events
-              const prog = this.getProgress();
-              this.emit('progress', prog);
-              this.emit('speed', { speed: this.speed, progress: prog });
+              const unitMult = sizeUnit.includes('g') ? 1073741824 : (sizeUnit.includes('m') ? 1048576 : 1024);
+              const totalBytes = Math.round(sizeVal * unitMult);
+              const spdMult = spdUnit.includes('m') ? 1048576 : 1024;
+              const speedBytes = Math.round(spdVal * spdMult);
+
+              if (totalBytes > 0) this.totalBytes = totalBytes;
+              if (speedBytes > 0) this.speed = speedBytes;
+              if (pct > 0) {
+                this.percent = Math.min(99, pct);
+                this.downloadedBytes = Math.round(this.totalBytes * (pct / 100));
+              }
+
+              emitLiveProgress();
             }
           } else if (trimmed.includes('Destination:')) {
             const match = trimmed.match(/Destination:\s*(.+)$/);
@@ -182,13 +219,11 @@ class VideoDownloadTask extends EventEmitter {
               this.filename = path.basename(resolved);
 
               const lower = dest.toLowerCase();
-              // Transition to phase 2 when audio track starts
               if (lower.includes('.f140') || lower.endsWith('.m4a') || lower.endsWith('.opus') || (this.videoTotal > 0 && this.streamPhase === 1)) {
                 this.streamPhase = 2;
               }
             }
           } else if (trimmed.includes('[Merger]') || trimmed.includes('Merging formats into')) {
-            // Transition to phase 3: ffmpeg muxing
             this.streamPhase = 3;
             this.percent = 99;
             this.speed = 0;
@@ -199,9 +234,7 @@ class VideoDownloadTask extends EventEmitter {
               this.filePath = resolved;
               this.filename = path.basename(resolved);
             }
-            const prog = this.getProgress();
-            this.emit('progress', prog);
-            this.emit('speed', { speed: 0, progress: prog });
+            emitLiveProgress();
           }
         }
       });

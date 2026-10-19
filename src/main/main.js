@@ -35,12 +35,13 @@ function showDownloadStatusWindow(taskId) {
 
   const iconPath = path.join(__dirname, '../../assets/icon.png');
   statusWindow = new BrowserWindow({
-    width: 600,
-    height: 410,
+    width: 620,
+    height: 580,
     minWidth: 540,
-    minHeight: 380,
-    resizable: false,
+    minHeight: 480,
+    resizable: true,
     maximizable: false,
+    minimizable: true,
     alwaysOnTop: true, // Floats over all apps like IDM!
     frame: false,
     backgroundColor: '#070a12',
@@ -444,19 +445,32 @@ function setupIpcHandlers() {
   });
 
   // Window Controls
-  ipcMain.handle('window-minimize', () => {
-    if (mainWindow) mainWindow.minimize();
+  ipcMain.handle('window-minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) win.minimize();
+    else if (mainWindow) mainWindow.minimize();
   });
 
-  ipcMain.handle('window-maximize', () => {
-    if (mainWindow) {
-      if (mainWindow.isMaximized()) mainWindow.unmaximize();
-      else mainWindow.maximize();
+  ipcMain.handle('window-maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
     }
   });
 
-  ipcMain.handle('window-close', () => {
-    if (mainWindow) mainWindow.close();
+  ipcMain.handle('window-close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) {
+      if (win === statusWindow) {
+        statusWindow.close();
+        statusWindow = null;
+      } else {
+        win.close();
+      }
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close();
+    }
   });
 }
 

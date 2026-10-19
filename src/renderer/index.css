@@ -185,6 +185,14 @@ body {
   justify-content: center;
   cursor: pointer;
   transition: all 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+button,
+.btn-primary,
+.btn-secondary,
+.titlebar-btn {
+  -webkit-app-region: no-drag;
 }
 
 .titlebar-btn:hover {
