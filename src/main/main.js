@@ -242,38 +242,25 @@ function startLoopbackServer() {
           if (data && data.url) {
             const settings = settingsManager.get();
 
-            // Auto-accept downloads without showing confirmation dialog
-            if (settings.autoAcceptDownloads) {
-              const task = downloadManager.createTask(data.url, {
-                filename: data.filename,
-                format: data.format,
-                quality: data.quality,
-                headers: data.headers || {}
-              });
+            // Directly start download and show ONLY the standalone small IDM status window
+            // Main application window stays hidden in background/system tray
+            const task = downloadManager.createTask(data.url, {
+              filename: data.filename,
+              format: data.format,
+              quality: data.quality,
+              headers: data.headers || {}
+            });
 
-              showDownloadStatusWindow(task.id);
+            // Pop up only the compact, topmost IDM status window
+            showDownloadStatusWindow(task.id);
 
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('task-status', { id: task.id, status: task.status, task: task.toJSON() });
-              }
-
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: true, taskId: task.id, autoAccepted: true }));
-              return;
-            }
-
-            // Otherwise prompt Download File Info dialog in desktop app
-            if (mainWindow) {
-              if (mainWindow.isMinimized()) mainWindow.restore();
-              mainWindow.show();
-              mainWindow.focus();
-              mainWindow.webContents.send('browser-download-intercepted', {
-                original: data
-              });
+            // Silently forward task to mainWindow so task lists stay updated
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('task-status', { id: task.id, status: task.status, task: task.toJSON() });
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, promptShown: true }));
+            res.end(JSON.stringify({ success: true, taskId: task.id }));
             return;
           }
         } catch (e) {
@@ -382,11 +369,27 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('open-file', (event, filePath) => {
-    if (filePath) shell.openPath(filePath);
+    if (!filePath) return;
+    if (fs.existsSync(filePath)) {
+      shell.openPath(filePath);
+    } else {
+      const dir = path.dirname(filePath);
+      if (fs.existsSync(dir)) {
+        shell.openPath(dir);
+      }
+    }
   });
 
   ipcMain.handle('open-folder', (event, filePath) => {
-    if (filePath) shell.showItemInFolder(filePath);
+    if (!filePath) return;
+    if (fs.existsSync(filePath)) {
+      shell.showItemInFolder(filePath);
+    } else {
+      const dir = path.dirname(filePath);
+      if (fs.existsSync(dir)) {
+        shell.openPath(dir);
+      }
+    }
   });
 
   ipcMain.handle('clear-history', (event, { deleteFilesFromDisk }) => {

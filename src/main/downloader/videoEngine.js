@@ -3,8 +3,23 @@ const path = require('path');
 const fs = require('fs');
 const { EventEmitter } = require('events');
 
-const YTDLP_PATH = path.resolve(__dirname, '../../../bin/yt-dlp.exe');
-const FFMPEG_DIR = path.resolve(__dirname, '../../../bin');
+function findBinary(name) {
+  const candidates = [
+    path.join(__dirname, '../../../bin', name),
+    path.join(__dirname, '../../../../bin', name),
+    path.join(process.resourcesPath || '', 'app/bin', name),
+    path.join(process.resourcesPath || '', 'bin', name),
+    path.join(process.cwd(), 'bin', name)
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return path.resolve(__dirname, '../../../bin', name);
+}
+
+const YTDLP_PATH = findBinary('yt-dlp.exe');
+const FFMPEG_PATH = findBinary('ffmpeg.exe');
+const FFMPEG_DIR = path.dirname(FFMPEG_PATH);
 
 function cleanVideoUrl(rawUrl) {
   if (!rawUrl) return rawUrl;
@@ -161,6 +176,10 @@ class VideoDownloadTask extends EventEmitter {
             const match = trimmed.match(/Destination:\s*(.+)$/);
             if (match && match[1]) {
               const dest = match[1].trim();
+              const resolved = path.isAbsolute(dest) ? dest : path.join(this.saveDirectory, path.basename(dest));
+              this.filePath = resolved;
+              this.filename = path.basename(resolved);
+
               const lower = dest.toLowerCase();
               // Transition to phase 2 when audio track starts
               if (lower.includes('.f140') || lower.endsWith('.m4a') || lower.endsWith('.opus') || (this.videoTotal > 0 && this.streamPhase === 1)) {
@@ -174,8 +193,10 @@ class VideoDownloadTask extends EventEmitter {
             this.speed = 0;
             const match = trimmed.match(/Merging formats into ["']?([^"']+)["']?/i);
             if (match && match[1]) {
-              this.filePath = match[1].trim();
-              this.filename = path.basename(this.filePath);
+              const dest = match[1].trim();
+              const resolved = path.isAbsolute(dest) ? dest : path.join(this.saveDirectory, path.basename(dest));
+              this.filePath = resolved;
+              this.filename = path.basename(resolved);
             }
             const prog = this.getProgress();
             this.emit('progress', prog);
@@ -194,39 +215,69 @@ class VideoDownloadTask extends EventEmitter {
           this.segments.forEach(s => s.percent = 100);
 
           // Verify final merged file on disk
-          let finalPath = this.filePath || path.join(this.saveDirectory, this.filename);
-          if (!fs.existsSync(finalPath)) {
+          let finalPath = this.filePath;
+          if (!finalPath || !fs.existsSync(finalPath)) {
             try {
-              const files = fs.readdirSync(this.saveDirectory);
-              const found = files.find(f => 
-                f.startsWith(this.cleanTitle.substring(0, 25)) && 
-                !f.endsWith('.part') && 
-                !f.endsWith('.ytdl') &&
-                !/\.f\d+\./.test(f)
-              );
-              if (found) {
-                this.filename = found;
-                finalPath = path.join(this.saveDirectory, found);
-                this.filePath = finalPath;
+              if (fs.existsSync(this.saveDirectory)) {
+                const files = fs.readdirSync(this.saveDirectory);
+                // Exclude partial/temporary files
+                const validFiles = files.filter(f => !f.endsWith('.part') && !f.endsWith('.ytdl'));
+
+                // Look for file that matches video/audio extensions and contains words from cleanTitle
+                const words = this.cleanTitle.toLowerCase().split(/[\s\-_–|]+/).filter(w => w.length > 2);
+                let matched = validFiles.find(f => {
+                  const lower = f.toLowerCase();
+                  return words.some(w => lower.includes(w)) && !/\.f\d+\./.test(f);
+                });
+
+                // Fallback to most recently created/modified file in this folder
+                if (!matched && validFiles.length > 0) {
+                  const sorted = validFiles.map(f => ({
+                    file: f,
+                    time: fs.statSync(path.join(this.saveDirectory, f)).mtimeMs
+                  })).sort((a, b) => b.time - a.time);
+                  matched = sorted[0].file;
+                }
+
+                if (matched) {
+                  this.filename = matched;
+                  finalPath = path.join(this.saveDirectory, matched);
+                  this.filePath = finalPath;
+                }
               }
             } catch (e) {}
           }
 
-          let finalSize = this.totalBytes || this.downloadedBytes;
+          let finalSize = 0;
           try {
-            if (fs.existsSync(finalPath)) {
+            if (finalPath && fs.existsSync(finalPath)) {
               finalSize = fs.statSync(finalPath).size;
             }
           } catch (e) {}
 
-          this.totalBytes = finalSize;
-          this.downloadedBytes = finalSize;
+          if (finalSize > 0) {
+            this.totalBytes = finalSize;
+            this.downloadedBytes = finalSize;
+          } else if (this.totalBytes > 0) {
+            this.downloadedBytes = this.totalBytes;
+          }
 
+          const prog = this.getProgress();
+          prog.status = 'completed';
+          prog.percent = 100;
+          prog.speed = 0;
+          prog.filePath = finalPath;
+          prog.filename = this.filename;
+          prog.totalBytes = this.totalBytes;
+          prog.downloadedBytes = this.downloadedBytes;
+
+          this.emit('progress', prog);
+          this.emit('status-changed', { status: 'completed', task: this.toJSON() });
           this.emit('completed', {
             id: this.id,
             filePath: finalPath,
             filename: this.filename,
-            totalBytes: finalSize
+            totalBytes: this.totalBytes
           });
         } else if (this.status !== 'cancelled') {
           this.status = 'error';
