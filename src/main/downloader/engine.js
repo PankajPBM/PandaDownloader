@@ -33,7 +33,7 @@ class DownloadTask extends EventEmitter {
     this.speed = 0;
     this.lastBytes = 0;
     this.speedTimer = null;
-    this.dynamicSplitThreshold = 2 * 1024 * 1024; // 2MB minimum chunk for splitting
+    this.dynamicSplitThreshold = 512 * 1024; // 512KB minimum chunk for dynamic IDM work-stealing
   }
 
   async start() {
@@ -182,7 +182,19 @@ class DownloadTask extends EventEmitter {
       return;
     }
 
-    const count = Math.min(this.connectionsCount, Math.max(1, Math.floor(this.totalBytes / (512 * 1024))));
+    // Auto-scale optimal connections based on file size (Replicating IDM logic)
+    let optimal = this.connectionsCount || 8;
+    if (this.totalBytes < 512 * 1024) {
+      optimal = 1; // < 512 KB: single connection avoids TLS overhead
+    } else if (this.totalBytes < 2 * 1024 * 1024) {
+      optimal = Math.min(2, optimal); // < 2 MB
+    } else if (this.totalBytes < 10 * 1024 * 1024) {
+      optimal = Math.min(4, optimal); // < 10 MB
+    } else if (this.totalBytes < 50 * 1024 * 1024) {
+      optimal = Math.min(8, optimal); // < 50 MB
+    }
+
+    const count = Math.max(1, optimal);
     const chunkSize = Math.floor(this.totalBytes / count);
 
     for (let i = 0; i < count; i++) {
@@ -280,13 +292,23 @@ class DownloadTask extends EventEmitter {
         }
 
         const writeOffset = segment.current;
-        segment.current += chunk.length;
-        segment.downloaded += chunk.length;
-        this.downloadedBytes += chunk.length;
+        const remaining = (segment.end - writeOffset + 1);
+        if (remaining <= 0) {
+          req.destroy();
+          segment.status = 'completed';
+          this._saveMetadata();
+          this._checkDynamicSplitOrFinish();
+          return;
+        }
+
+        const toWrite = chunk.length > remaining ? chunk.slice(0, remaining) : chunk;
+        segment.current += toWrite.length;
+        segment.downloaded += toWrite.length;
+        this.downloadedBytes += toWrite.length;
 
         // Write directly to file at target offset
         try {
-          fs.writeSync(this.fileDescriptor, chunk, 0, chunk.length, writeOffset);
+          fs.writeSync(this.fileDescriptor, toWrite, 0, toWrite.length, writeOffset);
         } catch (err) {
           req.destroy();
           this.emit('error', err);
@@ -294,6 +316,13 @@ class DownloadTask extends EventEmitter {
         }
 
         this.emit('progress', this.getProgress());
+
+        if (segment.current > segment.end) {
+          req.destroy();
+          segment.status = 'completed';
+          this._saveMetadata();
+          this._checkDynamicSplitOrFinish();
+        }
       });
 
       res.on('end', () => {

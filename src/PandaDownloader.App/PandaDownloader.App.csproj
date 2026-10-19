@@ -1,14 +1,18 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\PandaDownloader.Core\PandaDownloader.Core.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
+    <Company>PB Tech Zone</Company>
+    <Product>Panda Downloader</Product>
+    <Authors>PB Tech Zone</Authors>
   </PropertyGroup>
 
 </Project>

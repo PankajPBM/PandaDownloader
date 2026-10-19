@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, clipboard, Tray, Menu, Notification, dialog, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const { DownloadManager } = require('./downloader/manager');
 const settingsManager = require('./settings');
@@ -15,6 +16,8 @@ const PORT = 45731;
 
 function createWindow() {
   const iconPath = path.join(__dirname, '../../assets/icon.png');
+  const isBackground = process.argv.includes('--background') || process.argv.includes('--silent');
+
   mainWindow = new BrowserWindow({
     width: 1220,
     height: 780,
@@ -23,6 +26,7 @@ function createWindow() {
     backgroundColor: '#070a12',
     icon: iconPath,
     frame: false,
+    show: !isBackground, // Stay silent in tray if started in background
     titleBarStyle: 'hidden',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -31,13 +35,18 @@ function createWindow() {
     }
   });
 
-  const isDev = process.env.NODE_ENV !== 'production' && !app.isPackaged;
-  if (isDev) {
+  const distHtml = path.join(__dirname, '../../dist/index.html');
+  const isViteDev = process.env.VITE_DEV === 'true';
+
+  if (isViteDev) {
     mainWindow.loadURL('http://localhost:5173').catch(() => {
-      mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+      mainWindow.loadFile(distHtml);
     });
+  } else if (fs.existsSync(distHtml)) {
+    // Instant zero-delay load from built distribution
+    mainWindow.loadFile(distHtml);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+    mainWindow.loadURL('http://localhost:5173');
   }
 
   // Minimize to tray on close
