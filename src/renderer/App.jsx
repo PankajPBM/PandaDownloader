@@ -38,6 +38,7 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState('storage');
   const [activePopupTaskId, setActivePopupTaskId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleteFileFromDisk, setDeleteFileFromDisk] = useState(false);
@@ -1454,248 +1455,407 @@ export default function App() {
       {/* ============================================================== */}
       {showSettingsModal && (
         <div className="modal-backdrop" onClick={() => setShowSettingsModal(false)}>
-          <div className="modal-card settings-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 20 }}>⚙️</span>
-                <div className="modal-title">Panda Downloader Options</div>
+          <div className="settings-modal-card" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="settings-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ 
+                  width: 32, 
+                  height: 32, 
+                  borderRadius: 8, 
+                  background: 'rgba(16, 185, 129, 0.15)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  color: 'var(--accent-emerald)'
+                }}>
+                  <Settings size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)', letterSpacing: '-0.2px' }}>
+                    Preferences
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                    Panda Downloader v1.1.0 Configuration
+                  </div>
+                </div>
               </div>
               <button className="titlebar-btn" onClick={() => setShowSettingsModal(false)}>
                 <X size={16} />
               </button>
             </div>
 
-            {/* General Section */}
-            <div className="settings-group">
-              <div className="settings-group-title">File Saving & Folders</div>
-              <div className="form-group">
-                <label className="form-label">Default Save Directory</label>
-                <div className="dir-picker-row">
-                  <input 
-                    type="text" 
-                    className="form-input dir-picker-input" 
-                    value={targetSaveDir || settings.defaultSaveDir}
-                    onChange={e => setTargetSaveDir(e.target.value)}
-                  />
-                  <button className="btn-secondary" onClick={handleSelectDirectory}>
-                    <Folder size={14} />
-                    <span>Browse...</span>
-                  </button>
-                </div>
+            {/* Body: Sidebar + Content */}
+            <div className="settings-body">
+              {/* Left Navigation Sidebar */}
+              <div className="settings-sidebar">
+                <button 
+                  className={`settings-nav-btn ${activeSettingsTab === 'storage' ? 'active' : ''}`}
+                  onClick={() => setActiveSettingsTab('storage')}
+                >
+                  <Folder size={15} />
+                  <span>Storage & Folders</span>
+                </button>
+
+                <button 
+                  className={`settings-nav-btn ${activeSettingsTab === 'engine' ? 'active' : ''}`}
+                  onClick={() => setActiveSettingsTab('engine')}
+                >
+                  <Zap size={15} />
+                  <span>Download Engine</span>
+                </button>
+
+                <button 
+                  className={`settings-nav-btn ${activeSettingsTab === 'browser' ? 'active' : ''}`}
+                  onClick={() => setActiveSettingsTab('browser')}
+                >
+                  <Globe size={15} />
+                  <span>Browser Extension</span>
+                </button>
+
+                <button 
+                  className={`settings-nav-btn ${activeSettingsTab === 'window' ? 'active' : ''}`}
+                  onClick={() => setActiveSettingsTab('window')}
+                >
+                  <HardDrive size={15} />
+                  <span>Window & System</span>
+                </button>
+
+                <button 
+                  className={`settings-nav-btn ${activeSettingsTab === 'about' ? 'active' : ''}`}
+                  onClick={() => setActiveSettingsTab('about')}
+                >
+                  <ShieldCheck size={15} />
+                  <span>About & Support</span>
+                </button>
               </div>
 
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>Auto-Categorize into Subfolders</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>Saves into Video/, Audio/, Compressed/, Programs/, Documents/</div>
-                </div>
-                <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.autoCategorize}
-                    onChange={e => setSettings(prev => ({ ...prev, autoCategorize: e.target.checked }))}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-            </div>
-
-            {/* Interception & Background Section */}
-            <div className="settings-group">
-              <div className="settings-group-title">Interception & Daemon</div>
-
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>⚡ Instant Download (Auto-Start)</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                    Start downloads immediately from browser without confirmation. If turned OFF, displays the IDM Download File Info prompt to customize filename and folder.
-                  </div>
-                </div>
-                <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.autoAcceptDownloads}
-                    onChange={e => setSettings(prev => ({ ...prev, autoAcceptDownloads: e.target.checked }))}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>Minimize to System Tray</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>Keep running in background when window is closed</div>
-                </div>
-                <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.minimizeToTray}
-                    onChange={e => setSettings(prev => ({ ...prev, minimizeToTray: e.target.checked }))}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>Show Completion Popup Dialog</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                    Show floating status window when download finishes
-                  </div>
-                </div>
-                <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.showCompletionDialog}
-                    onChange={e => setSettings(prev => ({ ...prev, showCompletionDialog: e.target.checked }))}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>Open Folder Automatically When Done</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                    Automatically open download directory in Explorer after completion
-                  </div>
-                </div>
-                <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.openFolderOnCompletion}
-                    onChange={e => setSettings(prev => ({ ...prev, openFolderOnCompletion: e.target.checked }))}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Captured File Types & Extensions (Comma-separated)</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={extensionsInput}
-                  onChange={e => setExtensionsInput(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Browser Extension Integration */}
-            <div className="settings-group">
-              <div className="settings-group-title">Browser Integration (Chrome, Edge, Brave, Opera)</div>
-              <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 8, padding: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, background: 'rgba(16, 185, 129, 0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                      🐼
-                    </div>
+              {/* Right Content Panel */}
+              <div className="settings-content">
+                {/* 1. Storage & Folders Tab */}
+                {activeSettingsTab === 'storage' && (
+                  <>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: '#f8fafc' }}>Panda Downloader Browser Extension</div>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>Universal video/audio sniffer & 1-click accelerated download capture</div>
+                      <div className="settings-panel-title">Storage & Directories</div>
+                      <div className="settings-panel-desc">Configure where your downloads are stored and how files are organized.</div>
                     </div>
-                  </div>
-                  <button 
-                    className="btn-primary" 
-                    style={{ padding: '6px 14px', fontSize: 12 }}
-                    onClick={async () => {
-                      if (window.pandaAPI && window.pandaAPI.openExtensionFolder) {
-                        await window.pandaAPI.openExtensionFolder();
-                      }
-                    }}
-                  >
-                    <Download size={14} />
-                    <span>Install in Browser</span>
-                  </button>
-                </div>
 
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 11, color: '#cbd5e1', lineHeight: '1.6' }}>
-                  <div style={{ fontWeight: 600, color: '#10b981', marginBottom: 2 }}>Quick 10-Second Setup:</div>
-                  <div>1. Clicking <strong>"Install in Browser"</strong> opens <code>chrome://extensions</code> and opens the extension folder on your screen.</div>
-                  <div>2. Turn ON <strong>"Developer mode"</strong> (switch in top-right of Chrome/Edge/Brave).</div>
-                  <div>3. Drag the opened <code>extension</code> folder directly into your browser window (or click <strong>"Load unpacked"</strong>). Done!</div>
-                </div>
-              </div>
-            </div>
+                    <div className="settings-section-card">
+                      <div className="settings-row-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                        <div>
+                          <div className="settings-row-title">Default Save Directory</div>
+                          <div className="settings-row-desc">Downloaded files will be placed into this location by default</div>
+                        </div>
+                        <div className="dir-picker-row">
+                          <input 
+                            type="text" 
+                            className="form-input dir-picker-input" 
+                            value={targetSaveDir || settings.defaultSaveDir}
+                            onChange={e => setTargetSaveDir(e.target.value)}
+                          />
+                          <button className="btn-secondary" onClick={handleSelectDirectory}>
+                            <Folder size={14} />
+                            <span>Browse...</span>
+                          </button>
+                        </div>
+                      </div>
 
-            {/* Connection Section */}
-            <div className="settings-group">
-              <div className="settings-group-title">Connection & Performance</div>
-              <div className="form-group">
-                <label className="form-label">Default Acceleration Connections</label>
-                <div className="threads-selector">
-                  {[4, 8, 16, 32].map(num => (
-                    <div 
-                      key={num} 
-                      className={`thread-option ${connectionsCount === num ? 'selected' : ''}`}
-                      onClick={() => setConnectionsCount(num)}
-                    >
-                      {num} Threads
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Auto-Categorize into Subfolders</div>
+                          <div className="settings-row-desc">Automatically sorts completed downloads into Video/, Audio/, Compressed/, Programs/, and Documents/</div>
+                        </div>
+                        <label className="switch">
+                          <input 
+                            type="checkbox" 
+                            checked={settings.autoCategorize}
+                            onChange={e => setSettings(prev => ({ ...prev, autoCategorize: e.target.checked }))}
+                          />
+                          <span className="slider"></span>
+                        </label>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  </>
+                )}
+
+                {/* 2. Download Engine Tab */}
+                {activeSettingsTab === 'engine' && (
+                  <>
+                    <div>
+                      <div className="settings-panel-title">Download Engine & Interception</div>
+                      <div className="settings-panel-desc">Tune acceleration streams, automatic start behavior, and file interception.</div>
+                    </div>
+
+                    <div className="settings-section-card">
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Instant Download (Auto-Start)</div>
+                          <div className="settings-row-desc">
+                            When ON, browser downloads start immediately without prompt. When OFF, shows the IDM Download File Info dialog to customize filename and folder.
+                          </div>
+                        </div>
+                        <label className="switch">
+                          <input 
+                            type="checkbox" 
+                            checked={settings.autoAcceptDownloads}
+                            onChange={e => setSettings(prev => ({ ...prev, autoAcceptDownloads: e.target.checked }))}
+                          />
+                          <span className="slider"></span>
+                        </label>
+                      </div>
+
+                      <div className="settings-row-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                        <div>
+                          <div className="settings-row-title">Default Acceleration Connections</div>
+                          <div className="settings-row-desc">Number of parallel segmented TCP connections used per download</div>
+                        </div>
+                        <div className="threads-selector">
+                          {[4, 8, 16, 32].map(num => (
+                            <div 
+                              key={num} 
+                              className={`thread-option ${connectionsCount === num ? 'selected' : ''}`}
+                              onClick={() => setConnectionsCount(num)}
+                            >
+                              {num} Threads
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="settings-row-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                        <div>
+                          <div className="settings-row-title">Captured File Types & Extensions</div>
+                          <div className="settings-row-desc">Comma-separated file extensions intercepted automatically from browser navigation</div>
+                        </div>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={extensionsInput}
+                          onChange={e => setExtensionsInput(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* 3. Browser Extension Tab */}
+                {activeSettingsTab === 'browser' && (
+                  <>
+                    <div>
+                      <div className="settings-panel-title">Browser Integration</div>
+                      <div className="settings-panel-desc">Universal media sniffer & 1-click accelerated download capture for all modern browsers.</div>
+                    </div>
+
+                    <div className="settings-section-card">
+                      <div style={{ padding: 18 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ 
+                              width: 42, 
+                              height: 42, 
+                              borderRadius: 10, 
+                              background: 'rgba(16, 185, 129, 0.15)', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              fontSize: 22 
+                            }}>
+                              🐼
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-main)' }}>
+                                Panda Downloader Browser Extension
+                              </div>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                Supports Chrome, Microsoft Edge, Brave, Opera, and Vivaldi
+                              </div>
+                            </div>
+                          </div>
+                          <button 
+                            className="btn-primary" 
+                            style={{ padding: '8px 16px', fontSize: 13 }}
+                            onClick={async () => {
+                              if (window.pandaAPI && window.pandaAPI.openExtensionFolder) {
+                                await window.pandaAPI.openExtensionFolder();
+                              }
+                            }}
+                          >
+                            <Download size={15} />
+                            <span>Install in Browser</span>
+                          </button>
+                        </div>
+
+                        <div style={{ 
+                          marginTop: 18, 
+                          paddingTop: 16, 
+                          borderTop: '1px solid var(--border-subtle)', 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: 12 
+                        }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-emerald)' }}>
+                            Quick 10-Second Setup:
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12, color: 'var(--text-main)', lineHeight: 1.5 }}>
+                            <div className="step-number-badge">1</div>
+                            <div>Click <strong>"Install in Browser"</strong> above to open <code>chrome://extensions</code> and reveal the extension folder in Explorer.</div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12, color: 'var(--text-main)', lineHeight: 1.5 }}>
+                            <div className="step-number-badge">2</div>
+                            <div>Turn ON the <strong>"Developer mode"</strong> toggle switch in the top-right corner of your browser.</div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12, color: 'var(--text-main)', lineHeight: 1.5 }}>
+                            <div className="step-number-badge">3</div>
+                            <div>Drag and drop the opened <code>extension</code> folder directly into the browser page (or click <strong>"Load unpacked"</strong> and select it).</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* 4. Window & System Tab */}
+                {activeSettingsTab === 'window' && (
+                  <>
+                    <div>
+                      <div className="settings-panel-title">Window & System Behavior</div>
+                      <div className="settings-panel-desc">Manage system tray notifications, completion alerts, and window close actions.</div>
+                    </div>
+
+                    <div className="settings-section-card">
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Minimize to System Tray</div>
+                          <div className="settings-row-desc">Keep running in background when window is closed</div>
+                        </div>
+                        <label className="switch">
+                          <input 
+                            type="checkbox" 
+                            checked={settings.minimizeToTray}
+                            onChange={e => setSettings(prev => ({ ...prev, minimizeToTray: e.target.checked }))}
+                          />
+                          <span className="slider"></span>
+                        </label>
+                      </div>
+
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Show Completion Popup Dialog</div>
+                          <div className="settings-row-desc">Display floating notification window when download finishes</div>
+                        </div>
+                        <label className="switch">
+                          <input 
+                            type="checkbox" 
+                            checked={settings.showCompletionDialog}
+                            onChange={e => setSettings(prev => ({ ...prev, showCompletionDialog: e.target.checked }))}
+                          />
+                          <span className="slider"></span>
+                        </label>
+                      </div>
+
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Open Folder Automatically When Done</div>
+                          <div className="settings-row-desc">Automatically open download directory in Explorer after completion</div>
+                        </div>
+                        <label className="switch">
+                          <input 
+                            type="checkbox" 
+                            checked={settings.openFolderOnCompletion}
+                            onChange={e => setSettings(prev => ({ ...prev, openFolderOnCompletion: e.target.checked }))}
+                          />
+                          <span className="slider"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* 5. About & Support Tab */}
+                {activeSettingsTab === 'about' && (
+                  <>
+                    <div>
+                      <div className="settings-panel-title">About & Support</div>
+                      <div className="settings-panel-desc">Version details, theme settings, and developer contact support.</div>
+                    </div>
+
+                    <div className="settings-section-card">
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">App Version</div>
+                          <div className="settings-row-desc">v1.1.0 Production Release (IDM Multi-Segment Engine)</div>
+                        </div>
+                        <div style={{ 
+                          padding: '3px 8px', 
+                          borderRadius: 6, 
+                          fontSize: 11, 
+                          fontWeight: 700, 
+                          background: 'rgba(16, 185, 129, 0.15)', 
+                          color: 'var(--accent-emerald)', 
+                          border: '1px solid rgba(16, 185, 129, 0.3)' 
+                        }}>
+                          v1.1.0
+                        </div>
+                      </div>
+
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Interface Theme</div>
+                          <div className="settings-row-desc">Active: {theme === 'dark' ? 'Dark Mode (Obsidian)' : 'Light Mode (Clean Slate)'}</div>
+                        </div>
+                        <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={toggleTheme}>
+                          {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+                          <span>Switch to {theme === 'dark' ? 'Light' : 'Dark'}</span>
+                        </button>
+                      </div>
+
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Publisher / Developer</div>
+                          <div className="settings-row-desc">PB Tech Zone · Prakash Bhatt</div>
+                        </div>
+                        <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => handleOpenLink('https://prakash77.com.np')}>
+                          <Globe size={13} />
+                          <span>Website</span>
+                        </button>
+                      </div>
+
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">WhatsApp Direct Support</div>
+                          <div className="settings-row-desc">+977 9814891277 (Fast Response)</div>
+                        </div>
+                        <button 
+                          className="btn-secondary" 
+                          style={{ padding: '6px 12px', fontSize: 12, color: 'var(--accent-emerald)', borderColor: 'rgba(16, 185, 129, 0.3)' }} 
+                          onClick={() => handleOpenLink('https://wa.me/9779814891277')}
+                        >
+                          <MessageCircle size={13} />
+                          <span>WhatsApp</span>
+                        </button>
+                      </div>
+
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Source Repository</div>
+                          <div className="settings-row-desc">github.com/PankajPBM/PandaDownloader</div>
+                        </div>
+                        <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => handleOpenLink('https://github.com/PankajPBM/PandaDownloader')}>
+                          <ExternalLink size={13} />
+                          <span>GitHub</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Publisher & Support Section */}
-            <div className="settings-group">
-              <div className="settings-group-title">Publisher & Support</div>
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>App Version</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>v1.1.0 Production Release (IDM Multi-Segment Engine)</div>
-                </div>
-                <div style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                  v1.1.0
-                </div>
-              </div>
-
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>Publisher / Developer</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>PB Tech Zone</div>
-                </div>
-                <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => handleOpenLink('https://prakash77.com.np')}>
-                  <Globe size={12} />
-                  <span>Website</span>
-                </button>
-              </div>
-
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>WhatsApp Direct Support</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>+977 9814891277</div>
-                </div>
-                <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: 11, color: 'var(--accent-emerald)', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={() => handleOpenLink('https://wa.me/9779814891277')}>
-                  <MessageCircle size={12} />
-                  <span>WhatsApp</span>
-                </button>
-              </div>
-
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>Interface Theme</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Active: {theme.toUpperCase()} MODE</div>
-                </div>
-                <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={toggleTheme}>
-                  {theme === 'dark' ? <Sun size={12} /> : <Moon size={12} />}
-                  <span>Switch to {theme === 'dark' ? 'Light' : 'Dark'}</span>
-                </button>
-              </div>
-
-              <div className="settings-row">
-                <div>
-                  <div style={{ fontWeight: 600 }}>Source Repository</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>github.com/PankajPBM/PandaDownloader</div>
-                </div>
-                <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => handleOpenLink('https://github.com/PankajPBM/PandaDownloader')}>
-                  <ExternalLink size={12} />
-                  <span>GitHub</span>
-                </button>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+            {/* Footer */}
+            <div className="settings-footer">
               <button className="btn-secondary" onClick={() => setShowSettingsModal(false)}>
                 Cancel
               </button>
