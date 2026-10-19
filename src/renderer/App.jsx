@@ -168,6 +168,9 @@ export default function App() {
 
       const unsubClipboard = window.pandaAPI.onClipboardDetected((data) => {
         setClipboardPrompt(data.url);
+        setTimeout(() => {
+          setClipboardPrompt(prev => prev === data.url ? null : prev);
+        }, 6000);
       });
 
       const unsubBrowser = window.pandaAPI.onBrowserIntercepted((data) => {
@@ -850,8 +853,8 @@ export default function App() {
                     />
                   </div>
 
-                  {/* Segments Preview Mini */}
-                  {task.segments && task.segments.length > 0 && (
+                  {/* Segments Preview Mini - shown during active download */}
+                  {task.status === 'downloading' && task.segments && task.segments.length > 0 && (
                     <div className="segments-container" style={{ marginTop: 8 }}>
                       <div className="segments-header">
                         <span>Dynamic Multi-Segment Streams ({task.segments.length} Connections)</span>
