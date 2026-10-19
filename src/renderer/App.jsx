@@ -22,6 +22,10 @@ export default function App() {
   const [activePopupTaskId, setActivePopupTaskId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleteFileFromDisk, setDeleteFileFromDisk] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [expandedTaskIds, setExpandedTaskIds] = useState(new Set());
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearDeleteFromDisk, setClearDeleteFromDisk] = useState(false);
 
   // Sync theme with document root & body
   useEffect(() => {
@@ -311,6 +315,50 @@ export default function App() {
       setActivePopupTaskId(null);
     }
     setDeleteTarget(null);
+  };
+
+  const toggleExpandTask = (id) => {
+    setExpandedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectTask = (id) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    if (selectedTaskIds.size === filteredTasks.length && filteredTasks.length > 0) {
+      setSelectedTaskIds(new Set());
+    } else {
+      setSelectedTaskIds(new Set(filteredTasks.map(t => t.id)));
+    }
+  };
+
+  const handleClearConfirm = async (deleteFiles) => {
+    const idsToClear = selectedTaskIds.size > 0 
+      ? Array.from(selectedTaskIds) 
+      : filteredTasks.map(t => t.id);
+
+    if (window.pandaAPI) {
+      for (const id of idsToClear) {
+        await window.pandaAPI.deleteTask(id, deleteFiles);
+      }
+    }
+
+    setTasks(prev => prev.filter(t => !idsToClear.includes(t.id)));
+    setHistory(prev => prev.filter(t => !idsToClear.includes(t.id)));
+    setSelectedTaskIds(new Set());
+    setShowClearModal(false);
+    setClearDeleteFromDisk(false);
   };
 
   const handleOpenFile = (filePath) => {
@@ -758,6 +806,28 @@ export default function App() {
                 <Zap size={14} color={settings.autoAcceptDownloads ? '#10b981' : '#94a3b8'} />
                 <span>Auto-Accept: {settings.autoAcceptDownloads ? 'ON' : 'OFF'}</span>
               </button>
+
+              {selectedTaskIds.size > 0 ? (
+                <button 
+                  className="btn-secondary" 
+                  style={{ color: '#f43f5e', borderColor: 'rgba(244, 63, 94, 0.4)' }} 
+                  onClick={() => setShowClearModal(true)}
+                  title="Delete selected downloads"
+                >
+                  <Trash2 size={14} />
+                  <span>Delete Selected ({selectedTaskIds.size})</span>
+                </button>
+              ) : filteredTasks.length > 0 ? (
+                <button 
+                  className="btn-secondary" 
+                  style={{ color: '#f43f5e', borderColor: 'rgba(244, 63, 94, 0.4)' }} 
+                  onClick={() => setShowClearModal(true)} 
+                  title="Clear all downloads from history or disk"
+                >
+                  <Trash2 size={14} />
+                  <span>Clear All</span>
+                </button>
+              ) : null}
             </div>
 
             <div className="toolbar-right">
@@ -786,104 +856,141 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              filteredTasks.map((task) => (
-                <div 
-                  key={task.id} 
-                  className="download-card"
-                  onClick={() => setActivePopupTaskId(task.id)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <div className="card-header">
-                    <div className="card-title-group">
-                      <div className="file-icon">
-                        <Download size={20} />
-                      </div>
-                      <div className="file-meta-col">
-                        <div className="file-name" title={task.filename || task.url}>
-                          {task.filename || task.url}
-                        </div>
-                        <div className="file-details">
-                          <span>{formatBytes(task.downloadedBytes)} / {formatBytes(task.totalBytes)}</span>
-                          <span>•</span>
-                          <span>{task.percent || 0}%</span>
-                          {task.status === 'downloading' && (
-                            <>
-                              <span>•</span>
-                              <span style={{ color: '#10b981', fontWeight: 600 }}>{formatSpeed(task.speed)}</span>
-                              <span>•</span>
-                              <span>ETA: {formatETA(task.eta)}</span>
-                            </>
-                          )}
-                          <span>•</span>
-                          <span className={`status-tag ${task.status}`}>{task.status}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="card-actions" onClick={e => e.stopPropagation()}>
-                      {task.status === 'downloading' ? (
-                        <button className="action-btn" title="Pause" onClick={() => handlePause(task.id)}>
-                          <Pause size={14} />
-                        </button>
-                      ) : task.status === 'paused' ? (
-                        <button className="action-btn" title="Resume" onClick={() => handleResume(task.id)}>
-                          <Play size={14} />
-                        </button>
-                      ) : null}
-
-                      {task.filePath && (
-                        <>
-                          <button className="action-btn" title="Open File" onClick={() => handleOpenFile(task.filePath)}>
-                            <File size={14} />
-                          </button>
-                          <button className="action-btn" title="Open Folder" onClick={() => handleOpenFolder(task.filePath)}>
-                            <Folder size={14} />
-                          </button>
-                        </>
-                      )}
-
-                      <button className="action-btn delete" title="Delete Download" onClick={() => promptDelete(task)}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Master Progress Bar */}
-                  <div className="master-progress-track">
-                    <div 
-                      className="master-progress-fill" 
-                      style={{ width: `${Math.min(100, task.percent || 0)}%` }}
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px 10px 4px', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border-subtle)', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }} onClick={selectAllFiltered}>
+                    <input 
+                      type="checkbox" 
+                      checked={filteredTasks.length > 0 && selectedTaskIds.size === filteredTasks.length} 
+                      onChange={selectAllFiltered}
+                      style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#10b981' }}
                     />
+                    <span style={{ fontWeight: 600 }}>Select All ({filteredTasks.length})</span>
                   </div>
-
-                  {/* Segments Preview Mini - shown during active download */}
-                  {task.status === 'downloading' && task.segments && task.segments.length > 0 && (
-                    <div className="segments-container" style={{ marginTop: 8 }}>
-                      <div className="segments-header">
-                        <span>Dynamic Multi-Segment Streams ({task.segments.length} Connections)</span>
-                        <span>{task.supportsRange ? 'Range Accelerated' : 'Single Stream'}</span>
-                      </div>
-                      <div className="segments-grid">
-                        {task.segments.map((seg, idx) => (
-                          <div 
-                            key={idx} 
-                            className={`segment-capsule ${seg.status === 'downloading' ? 'active' : ''}`}
-                            title={`Thread ${idx + 1}: ${seg.percent || 0}%`}
-                          >
-                            <div 
-                              className="segment-fill" 
-                              style={{ width: `${Math.min(100, seg.percent || 0)}%` }}
-                            />
-                            <div className="segment-label">
-                              T{idx + 1}: {Math.floor(seg.percent || 0)}%
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                  {selectedTaskIds.size > 0 && (
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>{selectedTaskIds.size} of {filteredTasks.length} selected</span>
                   )}
                 </div>
-              ))
+
+                {filteredTasks.map((task) => (
+                  <div 
+                    key={task.id} 
+                    className="download-card"
+                    onClick={() => setActivePopupTaskId(task.id)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="card-header">
+                      <div className="card-title-group">
+                        <input 
+                          type="checkbox"
+                          checked={selectedTaskIds.has(task.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleSelectTask(task.id);
+                          }}
+                          style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#10b981', marginRight: 2 }}
+                        />
+                        <div className="file-icon">
+                          <Download size={20} />
+                        </div>
+                        <div className="file-meta-col">
+                          <div className="file-name" title={task.filename || task.url}>
+                            {task.filename || task.url}
+                          </div>
+                          <div className="file-details">
+                            <span>{formatBytes(task.downloadedBytes)} / {formatBytes(task.totalBytes)}</span>
+                            <span>•</span>
+                            <span>{task.percent || 0}%</span>
+                            {task.status === 'downloading' && (
+                              <>
+                                <span>•</span>
+                                <span style={{ color: '#10b981', fontWeight: 600 }}>{formatSpeed(task.speed)}</span>
+                                <span>•</span>
+                                <span>ETA: {formatETA(task.eta)}</span>
+                              </>
+                            )}
+                            <span>•</span>
+                            <span className={`status-tag ${task.status}`}>{task.status}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="card-actions" onClick={e => e.stopPropagation()}>
+                        {task.status === 'downloading' ? (
+                          <button className="action-btn" title="Pause" onClick={() => handlePause(task.id)}>
+                            <Pause size={14} />
+                          </button>
+                        ) : task.status === 'paused' ? (
+                          <button className="action-btn" title="Resume" onClick={() => handleResume(task.id)}>
+                            <Play size={14} />
+                          </button>
+                        ) : null}
+
+                        {task.filePath && (
+                          <>
+                            <button className="action-btn" title="Open File" onClick={() => handleOpenFile(task.filePath)}>
+                              <File size={14} />
+                            </button>
+                            <button className="action-btn" title="Open Folder" onClick={() => handleOpenFolder(task.filePath)}>
+                              <Folder size={14} />
+                            </button>
+                          </>
+                        )}
+
+                        {task.segments && task.segments.length > 0 && (
+                          <button 
+                            className={`action-btn ${expandedTaskIds.has(task.id) ? 'active' : ''}`} 
+                            title={expandedTaskIds.has(task.id) ? "Hide Connection Details" : "View Connection Details"} 
+                            onClick={() => toggleExpandTask(task.id)}
+                            style={{ color: expandedTaskIds.has(task.id) ? '#10b981' : 'inherit' }}
+                          >
+                            <Layers size={14} />
+                          </button>
+                        )}
+
+                        <button className="action-btn delete" title="Delete Download" onClick={() => promptDelete(task)}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Master Progress Bar */}
+                    <div className="master-progress-track">
+                      <div 
+                        className="master-progress-fill" 
+                        style={{ width: `${Math.min(100, task.percent || 0)}%` }}
+                      />
+                    </div>
+
+                    {/* Segments Preview Mini - ONLY shown on demand when user clicks details toggle! */}
+                    {expandedTaskIds.has(task.id) && task.segments && task.segments.length > 0 && (
+                      <div className="segments-container" style={{ marginTop: 8 }}>
+                        <div className="segments-header">
+                          <span>Dynamic Multi-Segment Streams ({task.segments.length} Connections)</span>
+                          <span>{task.supportsRange ? 'Range Accelerated' : 'Single Stream'}</span>
+                        </div>
+                        <div className="segments-grid">
+                          {task.segments.map((seg, idx) => (
+                            <div 
+                              key={idx} 
+                              className={`segment-capsule ${seg.status === 'downloading' ? 'active' : ''}`}
+                              title={`Thread ${idx + 1}: ${seg.percent || 0}%`}
+                            >
+                              <div 
+                                className="segment-fill" 
+                                style={{ width: `${Math.min(100, seg.percent || 0)}%` }}
+                              />
+                              <div className="segment-label">
+                                T{idx + 1}: {Math.floor(seg.percent || 0)}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </div>
@@ -1468,6 +1575,70 @@ export default function App() {
                 <Trash2 size={15} />
                 <span>Delete</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 6B. CLEAR ALL / DELETE SELECTED CONFIRMATION MODAL */}
+      {/* ============================================================== */}
+      {showClearModal && (
+        <div className="modal-backdrop" onClick={() => setShowClearModal(false)}>
+          <div className="modal-card" style={{ width: 460 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f43f5e' }}>
+                <AlertCircle size={20} />
+                <div className="modal-title" style={{ color: '#f43f5e' }}>
+                  {selectedTaskIds.size > 0 ? `Delete Selected (${selectedTaskIds.size})` : `Clear All Downloads (${filteredTasks.length})`}
+                </div>
+              </div>
+              <button className="titlebar-btn" onClick={() => setShowClearModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: 13, color: 'var(--text-main)', lineHeight: 1.5 }}>
+              {selectedTaskIds.size > 0 
+                ? `You have selected ${selectedTaskIds.size} downloads to clear.` 
+                : `Are you sure you want to clear all ${filteredTasks.length} downloads from the list?`}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(0,0,0,0.25)', padding: 12, borderRadius: 8, border: '1px solid var(--border-subtle)', margin: '12px 0' }}>
+              <input 
+                type="checkbox" 
+                id="clearDiskCheck" 
+                checked={clearDeleteFromDisk} 
+                onChange={e => setClearDeleteFromDisk(e.target.checked)}
+                style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#f43f5e' }}
+              />
+              <label htmlFor="clearDiskCheck" style={{ fontSize: 12, color: 'var(--text-main)', cursor: 'pointer', fontWeight: 500 }}>
+                Also permanently delete downloaded files from hard disk
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+              <button className="btn-secondary" onClick={() => setShowClearModal(false)}>
+                Cancel
+              </button>
+              {clearDeleteFromDisk ? (
+                <button 
+                  className="btn-primary" 
+                  style={{ background: '#f43f5e', borderColor: '#f43f5e' }}
+                  onClick={() => handleClearConfirm(true)}
+                >
+                  <Trash2 size={14} />
+                  <span>Delete from Disk & History</span>
+                </button>
+              ) : (
+                <button 
+                  className="btn-primary" 
+                  onClick={() => handleClearConfirm(false)}
+                >
+                  <Trash2 size={14} />
+                  <span>Remove from History Only</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
