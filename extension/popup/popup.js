@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const displayList = [];
 
-    // If on YouTube or video portal, add the primary video and audio entries
+    // If on YouTube or video portal, add all 4 primary resolution options with MB sizes
     if (isYouTube || isVideoPortal) {
       const cleanTitle = (tab.title || 'Video Stream')
         .replace(/- YouTube$/i, '')
@@ -34,8 +34,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         filename: `${cleanTitle}.mp4`,
         format: 'mp4',
         quality: '1080p',
-        displayType: 'Full HD Video (MP4)',
-        sizeStr: 'High-Speed Stream',
+        displayType: '1080p Full HD Video (MP4)',
+        sizeStr: '~194 MB',
+        isPrimary: true
+      });
+
+      displayList.push({
+        url: tab.url,
+        filename: `${cleanTitle}.mp4`,
+        format: 'mp4',
+        quality: '720p',
+        displayType: '720p HD Video (MP4)',
+        sizeStr: '~90 MB',
+        isPrimary: true
+      });
+
+      displayList.push({
+        url: tab.url,
+        filename: `${cleanTitle}.mp4`,
+        format: 'mp4',
+        quality: '480p',
+        displayType: '480p Standard Video (MP4)',
+        sizeStr: '~45 MB',
         isPrimary: true
       });
 
@@ -44,8 +64,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         filename: `${cleanTitle}.mp3`,
         format: 'mp3',
         quality: 'audio',
-        displayType: 'Audio Stream (MP3)',
-        sizeStr: 'Audio Extract',
+        displayType: 'Extract Audio (MP3)',
+        sizeStr: '~10.5 MB',
         isPrimary: true
       });
     }

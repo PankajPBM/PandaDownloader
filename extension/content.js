@@ -69,6 +69,51 @@
     const label = isAudio ? 'Download Audio' : 'Download this video';
     const logoUrl = chrome.runtime.getURL('icons/icon16.png');
 
+    const getEstimatedSize = (quality, dur) => {
+      if (!dur || dur <= 0 || isNaN(dur)) {
+        if (quality === '1080p') return '~194 MB';
+        if (quality === '720p') return '~90 MB';
+        if (quality === '480p') return '~45 MB';
+        if (quality === '360p') return '~26 MB';
+        if (quality === 'audio') return '~10.5 MB';
+        return '';
+      }
+      if (quality === '1080p') {
+        const mb = Math.round(dur * 0.595);
+        return `${mb >= 1 ? mb : '< 1'} MB`;
+      }
+      if (quality === '720p') {
+        const mb = Math.round(dur * 0.276);
+        return `${mb >= 1 ? mb : '< 1'} MB`;
+      }
+      if (quality === '480p') {
+        const mb = Math.round(dur * 0.138);
+        return `${mb >= 1 ? mb : '< 1'} MB`;
+      }
+      if (quality === '360p') {
+        const mb = Math.round(dur * 0.081);
+        return `${mb >= 1 ? mb : '< 1'} MB`;
+      }
+      if (quality === 'audio') {
+        const mb = (dur * 0.032).toFixed(1);
+        return `${mb} MB`;
+      }
+      return '';
+    };
+
+    const getDuration = () => {
+      const el = mediaInfo.element;
+      if (el && el.duration && !isNaN(el.duration) && el.duration > 0) return el.duration;
+      const ytPlayer = document.querySelector('#movie_player');
+      if (ytPlayer && typeof ytPlayer.getDuration === 'function') {
+        const d = ytPlayer.getDuration();
+        if (d && !isNaN(d) && d > 0) return d;
+      }
+      return 0;
+    };
+
+    const dur = getDuration();
+
     panel = document.createElement('div');
     panel.id = 'panda-idm-video-panel';
     panel.className = 'panda-idm-panel';
@@ -84,24 +129,29 @@
         <div class="panda-menu-item" data-quality="1080p" data-format="mp4">
           <span class="badge-res">1080p</span>
           <span class="item-name">Full HD Video (MP4)</span>
+          <span class="item-size" data-size-quality="1080p">${getEstimatedSize('1080p', dur)}</span>
         </div>
         <div class="panda-menu-item" data-quality="720p" data-format="mp4">
           <span class="badge-res">720p</span>
           <span class="item-name">HD Video (MP4)</span>
+          <span class="item-size" data-size-quality="720p">${getEstimatedSize('720p', dur)}</span>
         </div>
         <div class="panda-menu-item" data-quality="480p" data-format="mp4">
           <span class="badge-res">480p</span>
           <span class="item-name">Standard Video (MP4)</span>
+          <span class="item-size" data-size-quality="480p">${getEstimatedSize('480p', dur)}</span>
         </div>
         <div class="panda-menu-item" data-quality="360p" data-format="mp4">
           <span class="badge-res">360p</span>
           <span class="item-name">Low Bitrate (MP4)</span>
+          <span class="item-size" data-size-quality="360p">${getEstimatedSize('360p', dur)}</span>
         </div>
         <div class="panda-menu-divider"></div>
         ` : ''}
         <div class="panda-menu-item" data-quality="audio" data-format="mp3">
           <span class="badge-res audio">AUDIO</span>
           <span class="item-name">Extract Audio (MP3)</span>
+          <span class="item-size audio" data-size-quality="audio">${getEstimatedSize('audio', dur)}</span>
         </div>
       </div>
     `;
@@ -121,12 +171,29 @@
     mediaInfo.container.appendChild(panel);
     activePanel = panel;
 
+    // Real-time dynamic size updater when duration metadata loads
+    const updateSizes = () => {
+      const currentDur = getDuration();
+      if (!currentDur || currentDur <= 0) return;
+      panel.querySelectorAll('[data-size-quality]').forEach(el => {
+        const q = el.getAttribute('data-size-quality');
+        el.textContent = getEstimatedSize(q, currentDur);
+      });
+    };
+
+    if (mediaInfo.element) {
+      mediaInfo.element.addEventListener('durationchange', updateSizes);
+      mediaInfo.element.addEventListener('loadedmetadata', updateSizes);
+      mediaInfo.element.addEventListener('timeupdate', updateSizes, { once: true });
+    }
+
     const triggerBtn = panel.querySelector('#panda-trigger-btn');
     const dropdown = panel.querySelector('#panda-dropdown-menu');
 
     triggerBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
+      updateSizes();
       dropdown.classList.toggle('show');
     });
 
