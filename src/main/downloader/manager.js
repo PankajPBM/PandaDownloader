@@ -6,6 +6,17 @@ const { DownloadTask } = require('./engine');
 const { VideoDownloadTask, isVideoPortalUrl } = require('./videoEngine');
 const settingsManager = require('../settings');
 
+function fixMojibake(str) {
+  if (!str || typeof str !== 'string') return str || '';
+  if (/[\u00C2\u00C3\u00C4\u00C5\u00E0-\u00EF]/.test(str)) {
+    try {
+      const fixed = decodeURIComponent(escape(str));
+      if (fixed && fixed.length > 0) return fixed;
+    } catch (e) {}
+  }
+  return str;
+}
+
 class DownloadManager extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -24,17 +35,6 @@ class DownloadManager extends EventEmitter {
       try { fs.mkdirSync(saveDir, { recursive: true }); } catch (e) {}
     }
   }
-
-function fixMojibake(str) {
-  if (!str || typeof str !== 'string') return str || '';
-  if (/[\u00C2\u00C3\u00C4\u00C5\u00E0-\u00EF]/.test(str)) {
-    try {
-      const fixed = decodeURIComponent(escape(str));
-      if (fixed && fixed.length > 0) return fixed;
-    } catch (e) {}
-  }
-  return str;
-}
 
   _loadHistory() {
     try {
