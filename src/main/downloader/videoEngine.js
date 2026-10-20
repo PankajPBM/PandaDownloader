@@ -62,16 +62,16 @@ class VideoDownloadTask extends EventEmitter {
     this.connectionsCount = options.connectionsCount || 16;
     this.format = options.format || 'mp4';
     this.quality = options.quality || 'best';
-
     this.customFilename = options.filename;
     this.cleanTitle = options.filename ? options.filename.replace(/\.[^/.]+$/, '').trim() : '';
     this.filename = options.filename || 'Panda_Video.mp4';
+    this.headers = options.headers || {};
     this.filePath = '';
-    this.totalBytes = 0;
+    this.totalBytes = options.fileSize || 0;
     this.downloadedBytes = 0;
     this.speed = 0;
     this.percent = 0;
-    this.status = 'idle'; // 'idle', 'probing', 'downloading', 'completed', 'cancelled', 'error'
+    this.status = 'idle'; // 'idle', 'probing', 'connecting', 'downloading', 'merging', 'completed', 'cancelled', 'error'
     this.supportsRange = true;
     this.error = null;
     this.segments = [];
@@ -87,7 +87,7 @@ class VideoDownloadTask extends EventEmitter {
 
   async start() {
     try {
-      this.status = 'downloading';
+      this.status = 'connecting';
       this.emit('status-changed', { status: this.status, task: this.toJSON() });
 
       if (!fs.existsSync(this.saveDirectory)) {
@@ -100,41 +100,64 @@ class VideoDownloadTask extends EventEmitter {
 
       const isAudioOnly = this.format === 'mp3' || this.quality === 'audio' || /\.(mp3|m4a|wav|aac|flac)$/i.test(this.filename);
       const ext = isAudioOnly ? 'mp3' : 'mp4';
-      this.filename = `${this.cleanTitle}.${ext}`;
+      const baseClean = (this.cleanTitle || `Video_${Date.now()}`)
+        .replace(/\.(m3u8|mpd|mp4|webm|mkv|avi|mov|flv|ts|m4s)$/i, '')
+        .replace(/\.(m3u8|mpd|mp4|webm|mkv|avi|mov|flv|ts|m4s)$/i, '')
+        .trim() || `Video_${Date.now()}`;
+      this.cleanTitle = baseClean;
+      this.filename = `${baseClean}.${ext}`;
       this.filePath = path.join(this.saveDirectory, this.filename);
 
       // Initialize segments to visualize multi-connection fragments
       this.segments = Array.from({ length: this.connectionsCount }, (_, i) => ({
         id: i,
         percent: 0,
-        status: 'downloading'
+        status: 'connecting'
       }));
 
-      // Immediate spawn: No blocking probe; start downloading stream instantly
+      // High-performance download: Accelerated connection with multi-stream range downloading
       const args = [
         '--ffmpeg-location', FFMPEG_DIR,
         '--newline',
         '--no-playlist',
         '--windows-filenames',
         '--no-mtime',
+        '--no-check-certificates',
+        '--no-cache-dir',
+        '--no-part',
+        '--no-warnings',
+        '--compat-options', 'no-youtube-prefer-utc-upload-date',
+        '--extractor-args', 'youtube:player_client=android,web',
+        '--merge-output-format', 'mp4',
+        '--retries', '10',
+        '--fragment-retries', '10',
+        '--buffer-size', '16M',
         '--progress-template', 'PANDA:%(progress.downloaded_bytes)s:%(progress.total_bytes,progress.total_bytes_estimate)s:%(progress.speed)s:%(progress._percent_str)s:%(progress.eta)s',
         '-N', String(this.connectionsCount),
         '-P', this.saveDirectory,
-        '-o', '%(title)s.%(ext)s'
+        '-o', this.customFilename ? `${baseClean}.%(ext)s` : '%(title)s.%(ext)s'
       ];
 
       if (isAudioOnly) {
-        args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+        args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0', '-f', 'ba/b');
       } else if (this.quality && this.quality !== 'best') {
         const heightMatch = String(this.quality).match(/(\d+)/);
         if (heightMatch) {
           const h = parseInt(heightMatch[1], 10);
-          args.push('-f', `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`);
+          // Strictly select the user's chosen resolution height first, preventing unwanted fallback to 360p
+          args.push('-f', `bv*[height=${h}]+ba/bv*[height<=${h}][height>=${Math.max(144, h - 120)}]+ba/b[height=${h}]/b[height<=${h}]/best`);
         } else {
-          args.push('-f', 'bestvideo+bestaudio/best');
+          args.push('-f', 'bv*+ba/b/best');
         }
       } else {
-        args.push('-f', 'bestvideo+bestaudio/best');
+        args.push('-f', 'bv*+ba/b/best');
+      }
+
+      if (this.headers) {
+        const ref = this.headers['Referer'] || this.headers['referer'];
+        if (ref) args.push('--referer', ref);
+        const ua = this.headers['User-Agent'] || this.headers['user-agent'];
+        if (ua) args.push('--user-agent', ua);
       }
 
       args.push('--encoding', 'utf-8');
@@ -204,6 +227,12 @@ class VideoDownloadTask extends EventEmitter {
                 if (pct > 0) this.percent = pct;
               }
 
+              if (this.status === 'connecting') {
+                this.status = 'downloading';
+                this.segments.forEach(s => s.status = 'downloading');
+                this.emit('status-changed', { status: this.status, task: this.toJSON() });
+              }
+
               emitLiveProgress();
             }
           } else if (trimmed.startsWith('[download]') && trimmed.includes('%')) {
@@ -228,6 +257,12 @@ class VideoDownloadTask extends EventEmitter {
                 this.downloadedBytes = Math.round(this.totalBytes * (pct / 100));
               }
 
+              if (this.status === 'connecting') {
+                this.status = 'downloading';
+                this.segments.forEach(s => s.status = 'downloading');
+                this.emit('status-changed', { status: this.status, task: this.toJSON() });
+              }
+
               emitLiveProgress();
             }
           } else if (trimmed.includes('Destination:')) {
@@ -242,11 +277,19 @@ class VideoDownloadTask extends EventEmitter {
               if (lower.includes('.f140') || lower.endsWith('.m4a') || lower.endsWith('.opus') || (this.videoTotal > 0 && this.streamPhase === 1)) {
                 this.streamPhase = 2;
               }
+
+              if (this.status === 'connecting') {
+                this.status = 'downloading';
+                this.segments.forEach(s => s.status = 'downloading');
+                this.emit('status-changed', { status: this.status, task: this.toJSON() });
+              }
             }
           } else if (trimmed.includes('[Merger]') || trimmed.includes('Merging formats into')) {
             this.streamPhase = 3;
             this.percent = 99;
             this.speed = 0;
+            this.status = 'merging';
+            this.emit('status-changed', { status: this.status, task: this.toJSON() });
             const match = trimmed.match(/Merging formats into ["']?([^"']+)["']?/i);
             if (match && match[1]) {
               const dest = match[1].trim();
@@ -259,7 +302,10 @@ class VideoDownloadTask extends EventEmitter {
         }
       });
 
-      this.process.stderr.on('data', () => {});
+      this.lastStderr = '';
+      this.process.stderr.on('data', (data) => {
+        this.lastStderr += data.toString();
+      });
 
       this.process.on('close', (code) => {
         if (code === 0) {
@@ -341,7 +387,9 @@ class VideoDownloadTask extends EventEmitter {
           });
         } else if (this.status !== 'cancelled') {
           this.status = 'error';
-          this.error = `yt-dlp process exited with code ${code}`;
+          const lastLine = this.lastStderr ? this.lastStderr.split('\n').filter(l => l.trim().length > 0).pop() : '';
+          this.error = lastLine || `Download process exited with code ${code}`;
+          this.emit('status-changed', { status: 'error', task: this.toJSON() });
           this.emit('error', new Error(this.error));
         }
       });
@@ -349,12 +397,14 @@ class VideoDownloadTask extends EventEmitter {
       this.process.on('error', (err) => {
         this.status = 'error';
         this.error = err.message;
+        this.emit('status-changed', { status: 'error', task: this.toJSON() });
         this.emit('error', err);
       });
 
     } catch (err) {
       this.status = 'error';
       this.error = err.message;
+      this.emit('status-changed', { status: 'error', task: this.toJSON() });
       this.emit('error', err);
     }
   }
@@ -463,7 +513,7 @@ function isVideoPortalUrl(url) {
 
 const probeCache = new Map();
 
-function probeMedia(url) {
+function probeMedia(url, headers = {}) {
   return new Promise((resolve) => {
     const cleanUrl = cleanVideoUrl(url);
     if (!cleanUrl) return resolve({ title: '', duration: 0, formats: [] });
@@ -484,9 +534,17 @@ function probeMedia(url) {
       '--js-runtimes', 'node',
       '--no-playlist',
       '--skip-download',
-      '-J',
-      cleanUrl
+      '-J'
     ];
+
+    if (headers) {
+      const ref = headers['Referer'] || headers['referer'];
+      if (ref) args.push('--referer', ref);
+      const ua = headers['User-Agent'] || headers['user-agent'];
+      if (ua) args.push('--user-agent', ua);
+    }
+
+    args.push(cleanUrl);
 
     let stdoutData = '';
     let settled = false;

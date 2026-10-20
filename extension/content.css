@@ -1,9 +1,9 @@
 /* Panda Downloader - Official IDM Floating Video & Audio Download Panel */
 
 .panda-idm-panel {
-  position: absolute !important;
-  top: 14px !important;
-  right: 14px !important;
+  position: absolute;
+  top: 14px;
+  right: 14px;
   z-index: 2147483647 !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
   display: flex !important;
@@ -181,6 +181,45 @@
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+}
+
+.stream-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  padding: 8px 10px !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  margin-bottom: 3px !important;
+  transition: all 0.15s ease !important;
+}
+
+.stream-item:hover {
+  background: rgba(16, 185, 129, 0.15) !important;
+  transform: translateX(2px) !important;
+}
+
+.stream-btn-dl {
+  background: #10b981 !important;
+  color: #070a12 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex-shrink: 0 !important;
+  transition: background 0.15s ease !important;
+}
+
+.stream-btn-dl:hover {
+  background: #34d399 !important;
 }
 
 .panda-menu-divider {

@@ -31,6 +31,12 @@
       "css": ["content.css"],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": ["*://*.youtube.com/*", "*://youtube.com/*"],
+      "js": ["yt-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
     }
   ],
   "action": {

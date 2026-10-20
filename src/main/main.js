@@ -5,6 +5,7 @@ const http = require('http');
 const { DownloadManager } = require('./downloader/manager');
 const { probeMedia } = require('./downloader/videoEngine');
 const settingsManager = require('./settings');
+const licenseManager = require('./licenseManager');
 
 let mainWindow = null;
 let statusWindow = null;
@@ -82,6 +83,16 @@ function showDownloadStatusWindow(taskId) {
 }
 
 function showDownloadPromptWindow(data) {
+  if (!licenseManager.isAppUnlocked()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('license-expired-trigger');
+    }
+    return;
+  }
+
   if (promptWindow && !promptWindow.isDestroyed()) {
     promptWindow.show();
     promptWindow.focus();
@@ -94,9 +105,9 @@ function showDownloadPromptWindow(data) {
   const iconPath = path.join(__dirname, '../../assets/icon.png');
   promptWindow = new BrowserWindow({
     width: 620,
-    height: 460,
+    height: 375,
     minWidth: 580,
-    minHeight: 440,
+    minHeight: 360,
     useContentSize: true,
     resizable: false,
     maximizable: false,
@@ -171,6 +182,14 @@ function createWindow() {
   } else {
     mainWindow.loadURL('http://localhost:5173');
   }
+
+  // Intercept all window.open or target="_blank" to always open in the user's default external browser (e.g. Chrome/Edge)
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url && (url.startsWith('https:') || url.startsWith('http:') || url.startsWith('mailto:'))) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
 
   // Minimize to tray on close
   mainWindow.on('close', (event) => {
@@ -310,7 +329,12 @@ function startLoopbackServer() {
           res.end(JSON.stringify({ error: 'Missing url parameter' }));
           return;
         }
-        probeMedia(targetVideoUrl).then(result => {
+
+        const probeHeaders = {
+          'Referer': targetVideoUrl,
+          'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        };
+        probeMedia(targetVideoUrl, probeHeaders).then(result => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(result));
         }).catch(err => {
@@ -331,6 +355,18 @@ function startLoopbackServer() {
         try {
           const data = JSON.parse(body);
           if (data && data.url) {
+            if (!licenseManager.isAppUnlocked()) {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
+                mainWindow.webContents.send('license-expired-trigger');
+              }
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: 'Trial or license expired. Please activate Panda Downloader.' }));
+              return;
+            }
+
             const settings = settingsManager.get();
             const category = settingsManager.getCategory(data.filename || '', data.url);
             let targetDir = data.saveDirectory;
@@ -347,6 +383,7 @@ function startLoopbackServer() {
                 saveDirectory: targetDir,
                 format: data.format,
                 quality: data.quality,
+                fileSize: data.fileSize || 0,
                 headers: data.headers || {}
               });
 
@@ -412,6 +449,8 @@ function startClipboardMonitor() {
 
   setInterval(() => {
     try {
+      if (!licenseManager.isAppUnlocked()) return;
+
       const text = clipboard.readText().trim();
       if (text && text !== lastClipboardText && text.length < 2048) {
         lastClipboardText = text;
@@ -435,6 +474,15 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('add-task', (event, { url, filename, format, quality, connectionsCount, saveDirectory }) => {
+    if (!licenseManager.isAppUnlocked()) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('license-expired-trigger');
+      }
+      return { error: 'Trial or license expired. Please activate Panda Downloader.' };
+    }
+
     const task = downloadManager.createTask(url, {
       filename,
       format,
@@ -486,12 +534,22 @@ function setupIpcHandlers() {
       promptWindow.close();
       promptWindow = null;
     }
+    if (!licenseManager.isAppUnlocked()) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('license-expired-trigger');
+      }
+      return { success: false, error: 'Trial or license expired.' };
+    }
+
     const task = downloadManager.createTask(data.url, {
       filename: data.filename,
       saveDirectory: data.saveDirectory,
       connectionsCount: data.connectionsCount || 16,
       format: data.format,
       quality: data.quality,
+      fileSize: data.fileSize || 0,
       headers: data.headers || {}
     });
     showDownloadStatusWindow(task.id);
@@ -506,12 +564,22 @@ function setupIpcHandlers() {
       promptWindow.close();
       promptWindow = null;
     }
+    if (!licenseManager.isAppUnlocked()) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('license-expired-trigger');
+      }
+      return { success: false, error: 'Trial or license expired.' };
+    }
+
     const task = downloadManager.createTask(data.url, {
       filename: data.filename,
       saveDirectory: data.saveDirectory,
       connectionsCount: data.connectionsCount || 16,
       format: data.format,
       quality: data.quality,
+      fileSize: data.fileSize || 0,
       headers: data.headers || {}
     });
     task.pause();
@@ -522,6 +590,15 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('add-batch-tasks', (event, { urls, connectionsCount, saveDirectory }) => {
+    if (!licenseManager.isAppUnlocked()) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('license-expired-trigger');
+      }
+      return [];
+    }
+
     return downloadManager.createBatchTasks(urls, {
       connectionsCount,
       saveDirectory
@@ -534,6 +611,14 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('resume-task', (event, id) => {
+    if (!licenseManager.isAppUnlocked()) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('license-expired-trigger');
+      }
+      return { success: false, error: 'Trial or license expired. Please activate your license.' };
+    }
     downloadManager.resumeTask(id);
     return { success: true };
   });
@@ -597,8 +682,25 @@ function setupIpcHandlers() {
     return null;
   });
 
+  // Licensing Authority Handlers
+  ipcMain.handle('get-license-info', () => {
+    return licenseManager.getLicenseInfo();
+  });
+
+  ipcMain.handle('activate-license', async (event, key) => {
+    return await licenseManager.activateOnline(key);
+  });
+
+  ipcMain.handle('deactivate-license', async () => {
+    return await licenseManager.deactivate();
+  });
+
+  ipcMain.handle('sync-license', async () => {
+    return await licenseManager.syncLicense();
+  });
+
   ipcMain.handle('open-external', (event, url) => {
-    if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+    if (url && (url.startsWith('https://') || url.startsWith('http://') || url.startsWith('mailto:'))) {
       shell.openExternal(url);
     }
   });
@@ -687,12 +789,16 @@ function setupManagerEventForwarding() {
       }
     }
 
-    // If user turned OFF completion dialogs, auto-close the status window
-    if (!settings.showCompletionDialog && statusWindow && !statusWindow.isDestroyed()) {
-      try {
-        statusWindow.close();
-        statusWindow = null;
-      } catch (e) {}
+    // If autoCloseOnCompletion is enabled in settings (default: true), automatically close the status window after 1.5s
+    if (settings.autoCloseOnCompletion !== false && statusWindow && !statusWindow.isDestroyed()) {
+      setTimeout(() => {
+        if (statusWindow && !statusWindow.isDestroyed()) {
+          try {
+            statusWindow.close();
+            statusWindow = null;
+          } catch (e) {}
+        }
+      }, 1500);
     }
 
     if (settings.showCompletionDialog && Notification.isSupported()) {
@@ -742,6 +848,7 @@ if (!gotTheLock) {
     startClipboardMonitor();
     createWindow();
     createTray();
+    licenseManager.checkHeartbeat().catch(() => {});
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

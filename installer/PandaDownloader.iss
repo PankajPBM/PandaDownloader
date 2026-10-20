@@ -4,7 +4,7 @@
 ; Support WhatsApp: +9779814891277
 
 #define MyAppName "Panda Downloader"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "PB Tech Zone"
 #define MyAppURL "https://prakash77.com.np"
 #define MyAppWhatsApp "https://wa.me/9779814891277"
@@ -15,7 +15,7 @@
 AppId={{B81F28F4-0D68-45F9-8A19-9B84DF9A65D4}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName={#MyAppName} v{#MyAppVersion} (PB Tech Zone)
+AppVerName={#MyAppName} v{#MyAppVersion} by PB Tech Zone (Pankaj Kushwaha)
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppWhatsApp}
@@ -25,7 +25,7 @@ DefaultGroupName={#MyAppPublisher}\{#MyAppName}
 AllowNoIcons=yes
 LicenseFile=..\LICENSE
 OutputDir=Output
-OutputBaseFilename=PandaDownloader_Setup_v1.1.0
+OutputBaseFilename=PandaDownloader_Setup_v1.2.0
 SetupIconFile=..\assets\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -35,12 +35,12 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
-UninstallDisplayName={#MyAppName} v{#MyAppVersion} (PB Tech Zone)
+UninstallDisplayName={#MyAppName} v{#MyAppVersion} by PB Tech Zone (Pankaj Kushwaha)
 UninstallDisplayIcon={app}\assets\icon.ico
-VersionInfoVersion=1.1.0.0
+VersionInfoVersion=1.2.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=High-Speed Multi-Threaded Dynamic Segmentation Download Manager
-VersionInfoCopyright=Copyright (C) 2026 PB Tech Zone
+VersionInfoCopyright=Copyright (C) 2026 PB Tech Zone (Pankaj Kushwaha)
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -120,9 +120,8 @@ begin
     KillProcess('yt-dlp.exe');
     Sleep(500);
 
-    // Clean out old application dist and cache to guarantee 100% fresh installation
-    DelTree(ExpandConstant('{app}\resources\app\dist'), True, True, True);
-    DelTree(ExpandConstant('{app}\resources\app\src'), True, True, True);
+    // Clean out old application folder to guarantee 100% fresh installation with encrypted app.asar
+    DelTree(ExpandConstant('{app}\resources\app'), True, True, True);
   end;
 end;
 

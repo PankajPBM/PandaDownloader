@@ -23,6 +23,8 @@ tests/temp_downloads/
 download_history.json
 userData/
 *.log
+panda_trial.dat
+test_dl/
 
 # OS generated files
 Thumbs.db

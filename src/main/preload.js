@@ -19,6 +19,12 @@ contextBridge.exposeInMainWorld('pandaAPI', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openExtensionFolder: () => ipcRenderer.invoke('open-extension-folder'),
 
+  // Licensing Authority Integration
+  getLicenseInfo: () => ipcRenderer.invoke('get-license-info'),
+  activateLicense: (key) => ipcRenderer.invoke('activate-license', key),
+  deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
+  syncLicense: () => ipcRenderer.invoke('sync-license'),
+
   // Window control
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),
@@ -103,5 +109,10 @@ contextBridge.exposeInMainWorld('pandaAPI', {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('open-settings-modal', handler);
     return () => ipcRenderer.removeListener('open-settings-modal', handler);
+  },
+  onLicenseExpiredTrigger: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('license-expired-trigger', handler);
+    return () => ipcRenderer.removeListener('license-expired-trigger', handler);
   }
 });

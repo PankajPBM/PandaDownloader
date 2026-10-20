@@ -5,7 +5,7 @@ import {
   Minus, Square, Copy, CheckCircle, Settings, Layers,
   ExternalLink, Zap, Check, Music, Video, Archive,
   FileText, Cpu, AlertCircle, Sun, Moon, Phone, MessageCircle,
-  Clock
+  Clock, Key, Lock
 } from 'lucide-react';
 
 function fixMojibake(str) {
@@ -47,6 +47,7 @@ export default function App() {
   const [expandedTaskIds, setExpandedTaskIds] = useState(new Set());
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearDeleteFromDisk, setClearDeleteFromDisk] = useState(false);
+  const [completionTask, setCompletionTask] = useState(null);
 
   // Sync theme with document root & body
   useEffect(() => {
@@ -61,10 +62,14 @@ export default function App() {
     } catch (e) {}
   }, [theme]);
 
-  // Derive popup task directly from active tasks or completion task only when activePopupTaskId is set
-  const activePopupTask = activePopupTaskId 
-    ? (tasks.find(t => t.id === activePopupTaskId) || (completionTask && completionTask.id === activePopupTaskId ? completionTask : null) || history.find(t => t.id === activePopupTaskId))
-    : null;
+  // Derive popup task: In status window, resolve active task or completion task. In main window, only if activePopupTaskId is explicitly set.
+  const activePopupTask = isStatusWindow
+    ? (activePopupTaskId 
+        ? (tasks.find(t => t.id === activePopupTaskId) || (completionTask && completionTask.id === activePopupTaskId ? completionTask : null) || history.find(t => t.id === activePopupTaskId))
+        : (completionTask || tasks[0] || (history.length > 0 ? history[0] : null)))
+    : (activePopupTaskId 
+        ? (tasks.find(t => t.id === activePopupTaskId) || (completionTask && completionTask.id === activePopupTaskId ? completionTask : null) || history.find(t => t.id === activePopupTaskId))
+        : null);
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -107,9 +112,107 @@ export default function App() {
   const [totalSpeed, setTotalSpeed] = useState(0);
   const [clipboardPrompt, setClipboardPrompt] = useState(null);
 
+  // License Authority State
+  const [licenseInfo, setLicenseInfo] = useState(null);
+  const [licenseInputKey, setLicenseInputKey] = useState('');
+  const [licenseLoading, setLicenseLoading] = useState(false);
+  const [licenseMsg, setLicenseMsg] = useState(null);
+
+  // Expired Lock Screen State
+  const [copiedLockMachineId, setCopiedLockMachineId] = useState(false);
+  const [lockKeyInput, setLockKeyInput] = useState('');
+  const [lockKeyLoading, setLockKeyLoading] = useState(false);
+  const [lockKeyMsg, setLockKeyMsg] = useState(null);
+
+  // Draggable Modals Support
+  const [prefModalOffset, setPrefModalOffset] = useState({ x: 0, y: 0 });
+  const [idmPopupOffset, setIdmPopupOffset] = useState({ x: 0, y: 0 });
+  const [addModalOffset, setAddModalOffset] = useState({ x: 0, y: 0 });
+  const [batchModalOffset, setBatchModalOffset] = useState({ x: 0, y: 0 });
+  const [deleteModalOffset, setDeleteModalOffset] = useState({ x: 0, y: 0 });
+  const [clearModalOffset, setClearModalOffset] = useState({ x: 0, y: 0 });
+
+  const handleStartDrag = (e, setOffset) => {
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('label') || e.target.closest('a') || e.target.closest('.switch')) {
+      return;
+    }
+    e.preventDefault();
+    let currentX = 0, currentY = 0;
+    setOffset(curr => {
+      currentX = curr.x;
+      currentY = curr.y;
+      return curr;
+    });
+
+    const startMouseX = e.clientX;
+    const startMouseY = e.clientY;
+
+    const onMouseMove = (moveEvent) => {
+      const dx = moveEvent.clientX - startMouseX;
+      const dy = moveEvent.clientY - startMouseY;
+      setOffset({
+        x: currentX + dx,
+        y: currentY + dy
+      });
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const refreshLicense = async (silent = false) => {
+    if (!silent) setLicenseLoading(true);
+    try {
+      if (window.pandaAPI && window.pandaAPI.syncLicense) {
+        const res = await window.pandaAPI.syncLicense();
+        if (res && res.info) {
+          setLicenseInfo(res.info);
+          if (!silent) setLicenseMsg({ type: 'success', text: 'License status synchronized with server.' });
+          return;
+        }
+      }
+      if (window.pandaAPI && window.pandaAPI.getLicenseInfo) {
+        const info = await window.pandaAPI.getLicenseInfo();
+        setLicenseInfo(info);
+      }
+    } catch (e) {
+      if (!silent) setLicenseMsg({ type: 'error', text: 'Failed to sync license with server.' });
+    } finally {
+      if (!silent) setLicenseLoading(false);
+    }
+  };
+
   // Load initial tasks & settings & setup IPC listeners
   useEffect(() => {
     if (window.pandaAPI) {
+      if (window.pandaAPI.getLicenseInfo) {
+        window.pandaAPI.getLicenseInfo().then(info => {
+          if (info) setLicenseInfo(info);
+        });
+      }
+
+      // Proactively sync license in background on startup
+      if (window.pandaAPI.syncLicense) {
+        window.pandaAPI.syncLicense().then(res => {
+          if (res && res.info) setLicenseInfo(res.info);
+        }).catch(() => {});
+      }
+
+      let unsubExpiredTrigger = null;
+      if (window.pandaAPI.onLicenseExpiredTrigger) {
+        unsubExpiredTrigger = window.pandaAPI.onLicenseExpiredTrigger(() => {
+          if (window.pandaAPI.getLicenseInfo) {
+            window.pandaAPI.getLicenseInfo().then(info => {
+              if (info) setLicenseInfo(info);
+            });
+          }
+        });
+      }
       window.pandaAPI.getAllTasks().then(data => {
         if (data) {
           setTasks(data.active || []);
@@ -168,6 +271,8 @@ export default function App() {
       });
 
       const unsubCompleted = window.pandaAPI.onCompleted((data) => {
+        const completedObj = { ...data, status: 'completed' };
+        setCompletionTask(completedObj);
         setTasks(prev => {
           const remaining = prev.filter(t => t.id !== data.id);
           const total = remaining.reduce((acc, t) => acc + (t.status === 'downloading' ? (t.speed || 0) : 0), 0);
@@ -176,8 +281,8 @@ export default function App() {
         });
         setHistory(prev => {
           const exists = prev.some(h => h.id === data.id);
-          if (exists) return prev.map(h => h.id === data.id ? { ...h, ...data, status: 'completed' } : h);
-          return [{ ...data, status: 'completed' }, ...prev];
+          if (exists) return prev.map(h => h.id === data.id ? { ...h, ...completedObj } : h);
+          return [completedObj, ...prev];
         });
         if (settings.openFolderOnCompletion && data.filePath) {
           handleOpenFolder(data.filePath);
@@ -247,6 +352,7 @@ export default function App() {
         unsubOpenAdd();
         unsubOpenSettings();
         if (unsubPromptInfo) unsubPromptInfo();
+        if (unsubExpiredTrigger) unsubExpiredTrigger();
       };
     } else {
       // Mock tasks for development preview
@@ -286,20 +392,20 @@ export default function App() {
     }
   }, []);
 
-  // Auto-close status popup on completion according to settings
+  // Auto-close status window on completion if user enabled autoCloseOnCompletion (default: true)
   useEffect(() => {
     if (!isStatusWindow) return;
     const currentTask = activePopupTask || tasks[0] || (history.length > 0 ? history[0] : null);
     const isCompleted = currentTask && currentTask.status === 'completed';
-    if (isCompleted && (settings.autoCloseOnCompletion !== false && settings.showCompletionDialog !== false)) {
+    if (isCompleted && settings.autoCloseOnCompletion !== false) {
       const timer = setTimeout(() => {
         if (window.pandaAPI && window.pandaAPI.closeStatusWindow) {
           window.pandaAPI.closeStatusWindow();
         }
-      }, 1800);
+      }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [isStatusWindow, activePopupTask, tasks, history, settings.autoCloseOnCompletion, settings.showCompletionDialog]);
+  }, [isStatusWindow, activePopupTask, tasks, history, settings.autoCloseOnCompletion]);
 
   // Handlers
   const handleStartDownload = async () => {
@@ -660,8 +766,26 @@ export default function App() {
     };
 
     const isDone = task.status === 'completed';
+    const isConnecting = task.status === 'connecting' || (task.status === 'downloading' && (!task.totalBytes || task.totalBytes === 0) && (!task.downloadedBytes || task.downloadedBytes === 0));
+    const isMerging = task.status === 'merging';
     const displayPercent = isDone ? 100 : Math.min(100, Math.floor(task.percent || 0));
     const displayDownloaded = isDone && task.totalBytes > 0 ? task.totalBytes : (task.downloadedBytes || 0);
+
+    let statusDisplay = task.status;
+    let statusColor = '#f59e0b';
+    if (isDone) {
+      statusDisplay = 'Completed';
+      statusColor = '#10b981';
+    } else if (isMerging) {
+      statusDisplay = 'Merging Video & Audio (FFmpeg)...';
+      statusColor = '#8b5cf6';
+    } else if (isConnecting) {
+      statusDisplay = 'Connecting to Streams...';
+      statusColor = '#06b6d4';
+    } else if (task.status === 'downloading') {
+      statusDisplay = `Downloading (${task.connectionsCount || 16} Streams)`;
+      statusColor = '#10b981';
+    }
 
     return (
       <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 12, background: 'var(--bg-secondary)', color: 'var(--text-main)', userSelect: 'none', border: '1px solid var(--border-focus)', borderRadius: 10, boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -694,23 +818,23 @@ export default function App() {
             <span className="idm-grid-value" title={task.filename} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.filename || task.url}</span>
 
             <span className="idm-grid-label">Status:</span>
-            <span className="idm-grid-value" style={{ textTransform: 'capitalize', color: isDone ? '#10b981' : task.status === 'downloading' ? '#06b6d4' : '#f59e0b', fontWeight: 700 }}>
-              {task.status}
+            <span className="idm-grid-value" style={{ textTransform: 'capitalize', color: statusColor, fontWeight: 700 }}>
+              {statusDisplay}
             </span>
 
             <span className="idm-grid-label">File Size:</span>
-            <span className="idm-grid-value">{formatBytes(task.totalBytes)}</span>
+            <span className="idm-grid-value">{task.totalBytes > 0 ? formatBytes(task.totalBytes) : (isConnecting ? 'Allocating stream size...' : 'Probing...')}</span>
 
             <span className="idm-grid-label">Downloaded:</span>
-            <span className="idm-grid-value">{formatBytes(displayDownloaded)} ({displayPercent}%)</span>
+            <span className="idm-grid-value">{isConnecting ? 'Connecting to server...' : `${formatBytes(displayDownloaded)} (${displayPercent}%)`}</span>
 
             <span className="idm-grid-label">Transfer Rate:</span>
             <span className="idm-grid-value" style={{ color: '#06b6d4', fontWeight: 700 }}>
-              {task.status === 'downloading' ? formatSpeed(task.speed) : '0 KB/s'}
+              {isDone ? 'Finished' : (isConnecting ? 'Connecting...' : (isMerging ? 'Muxing...' : (task.status === 'downloading' ? formatSpeed(task.speed) : '0 KB/s')))}
             </span>
 
             <span className="idm-grid-label">Time Left (ETA):</span>
-            <span className="idm-grid-value">{isDone ? '--' : formatETA(task.eta)}</span>
+            <span className="idm-grid-value">{isDone ? '--' : (isConnecting ? 'Negotiating CDN...' : (isMerging ? 'Finishing...' : formatETA(task.eta)))}</span>
 
             <span className="idm-grid-label">Resume Capability:</span>
             <span className="idm-grid-value" style={{ color: task.supportsRange ? '#10b981' : '#f59e0b' }}>
@@ -729,10 +853,14 @@ export default function App() {
           <div className="idm-shimmer-track">
             <div 
               className="idm-shimmer-fill" 
-              style={{ width: `${displayPercent}%` }}
+              style={{ 
+                width: isConnecting ? '100%' : `${displayPercent}%`,
+                background: isConnecting ? 'linear-gradient(90deg, #0284c7 0%, #38bdf8 50%, #0284c7 100%)' : undefined,
+                opacity: isConnecting ? 0.85 : 1
+              }}
             />
             <div className="idm-shimmer-text">
-              {displayPercent}% Completed
+              {isConnecting ? 'Connecting to Streams...' : `${displayPercent}% Completed`}
             </div>
           </div>
 
@@ -815,7 +943,7 @@ export default function App() {
                   </button>
                 )}
               </>
-            ) : task.status === 'downloading' ? (
+            ) : (task.status === 'downloading' || task.status === 'connecting' || task.status === 'merging') ? (
               <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => handlePause(task.id)}>
                 <Pause size={14} />
                 <span>Pause</span>
@@ -823,7 +951,7 @@ export default function App() {
             ) : (
               <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => handleResume(task.id)}>
                 <Play size={14} />
-                <span>Resume</span>
+                <span>{task.status === 'error' ? 'Retry' : 'Resume'}</span>
               </button>
             )}
 
@@ -835,7 +963,24 @@ export default function App() {
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }} title="Automatically close this window once download reaches 100%">
+              <input 
+                type="checkbox" 
+                checked={settings.autoCloseOnCompletion !== false} 
+                onChange={async (e) => {
+                  const val = e.target.checked;
+                  const updated = { ...settings, autoCloseOnCompletion: val };
+                  setSettings(updated);
+                  if (window.pandaAPI && window.pandaAPI.saveSettings) {
+                    await window.pandaAPI.saveSettings(updated);
+                  }
+                }}
+                style={{ cursor: 'pointer', width: 14, height: 14, accentColor: '#10b981' }}
+              />
+              <span>Close when complete</span>
+            </label>
+
             <button className="btn-secondary" style={{ padding: '6px 16px', fontSize: 12 }} onClick={() => window.pandaAPI && window.pandaAPI.closeStatusWindow()}>
               {isDone ? 'Close' : 'Hide to Background'}
             </button>
@@ -864,6 +1009,56 @@ export default function App() {
           <span className="logo-icon">🐼</span>
           <span>Panda Downloader</span>
           <span className="badge">IDM ENGINE</span>
+          {licenseInfo && (
+            <span 
+              className="badge" 
+              style={{ 
+                cursor: 'pointer', 
+                background: licenseInfo.isLicensed 
+                  ? 'rgba(16, 185, 129, 0.15)' 
+                  : licenseInfo.isExpired 
+                    ? 'rgba(239, 68, 68, 0.2)' 
+                    : 'rgba(245, 158, 11, 0.2)', 
+                color: licenseInfo.isLicensed 
+                  ? 'var(--accent-emerald)' 
+                  : licenseInfo.isExpired 
+                    ? '#f87171' 
+                    : '#fbbf24',
+                border: `1px solid ${
+                  licenseInfo.isLicensed 
+                    ? 'rgba(16, 185, 129, 0.3)' 
+                    : licenseInfo.isExpired 
+                      ? 'rgba(239, 68, 68, 0.4)' 
+                      : 'rgba(245, 158, 11, 0.4)'
+                }`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+              onClick={() => {
+                setActiveSettingsTab('licensing');
+                setShowSettingsModal(true);
+              }}
+              title="Click to view License & Activation Details"
+            >
+              {licenseInfo.isLicensed ? (
+                <>
+                  <ShieldCheck size={11} />
+                  <span>Licensed</span>
+                </>
+              ) : licenseInfo.isExpired ? (
+                <>
+                  <AlertCircle size={11} />
+                  <span>Trial Expired</span>
+                </>
+              ) : (
+                <>
+                  <Clock size={11} />
+                  <span>30-Day Trial: {licenseInfo.trialDaysRemaining}d left</span>
+                </>
+              )}
+            </span>
+          )}
           <span 
             className="badge" 
             style={{ cursor: 'pointer', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--accent-cyan)' }} 
@@ -1108,7 +1303,12 @@ export default function App() {
                   <div 
                     key={task.id} 
                     className="download-card"
-                    onClick={() => setActivePopupTaskId(task.id)}
+                    onClick={() => toggleSelectTask(task.id)}
+                    onDoubleClick={() => {
+                      if (window.pandaAPI && window.pandaAPI.showStatusWindow) {
+                        window.pandaAPI.showStatusWindow(task.id);
+                      }
+                    }}
                     style={{ cursor: 'pointer' }}
                   >
                     <div className="card-header">
@@ -1148,6 +1348,18 @@ export default function App() {
                       </div>
 
                       <div className="card-actions" onClick={e => e.stopPropagation()}>
+                        <button 
+                          className="action-btn" 
+                          title="Open Status Window (IDM Float)" 
+                          onClick={() => {
+                            if (window.pandaAPI && window.pandaAPI.showStatusWindow) {
+                              window.pandaAPI.showStatusWindow(task.id);
+                            }
+                          }}
+                        >
+                          <Activity size={14} />
+                        </button>
+
                         {task.status === 'downloading' ? (
                           <button className="action-btn" title="Pause" onClick={() => handlePause(task.id)}>
                             <Pause size={14} />
@@ -1229,139 +1441,25 @@ export default function App() {
       </div>
 
       {/* ============================================================== */}
-      {/* 1. ICONIC IDM DOWNLOAD PROGRESS POPUP WINDOW */}
+      {/* 1. IDM DOWNLOAD PROGRESS: Handled exclusively via standalone native OS statusWindow */}
+      {/* (In IDM, the main dashboard never shows an in-window modal dialog covering the download list) */}
       {/* ============================================================== */}
-      {activePopupTask && (
-        <div className="modal-backdrop" onClick={() => setActivePopupTaskId(null)}>
-          <div className="idm-popup-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 20 }}>⚡</span>
-                <div>
-                  <div className="modal-title">Download Status: {activePopupTask.filename || 'File'}</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>Dynamic Range Segmentation Engine</div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button className="titlebar-btn" onClick={() => setActivePopupTaskId(null)} title="Hide to Background">
-                  <Minus size={16} />
-                </button>
-                <button className="titlebar-btn close" onClick={() => setActivePopupTaskId(null)} title="Close Details">
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* IDM Grid Info */}
-            <div className="idm-grid">
-              <span className="idm-grid-label">File Name:</span>
-              <span className="idm-grid-value" title={activePopupTask.filename}>{activePopupTask.filename || activePopupTask.url}</span>
-
-              <span className="idm-grid-label">Status:</span>
-              <span className="idm-grid-value" style={{ textTransform: 'capitalize', color: activePopupTask.status === 'downloading' ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
-                {activePopupTask.status}
-              </span>
-
-              <span className="idm-grid-label">File Size:</span>
-              <span className="idm-grid-value">{formatBytes(activePopupTask.totalBytes)}</span>
-
-              <span className="idm-grid-label">Downloaded:</span>
-              <span className="idm-grid-value">{formatBytes(activePopupTask.downloadedBytes)} ({activePopupTask.percent || 0}%)</span>
-
-              <span className="idm-grid-label">Transfer Rate:</span>
-              <span className="idm-grid-value" style={{ color: '#06b6d4', fontWeight: 700 }}>
-                {activePopupTask.status === 'downloading' ? formatSpeed(activePopupTask.speed) : '0 KB/s'}
-              </span>
-
-              <span className="idm-grid-label">Time Left (ETA):</span>
-              <span className="idm-grid-value">{formatETA(activePopupTask.eta)}</span>
-
-              <span className="idm-grid-label">Resume Capability:</span>
-              <span className="idm-grid-value" style={{ color: activePopupTask.supportsRange ? '#10b981' : '#f59e0b' }}>
-                {activePopupTask.supportsRange ? '✓ Yes (HTTP Range)' : 'Limited / Single Stream'}
-              </span>
-
-              {activePopupTask.filePath && (
-                <>
-                  <span className="idm-grid-label">Save To:</span>
-                  <span className="idm-grid-value" title={activePopupTask.filePath}>{activePopupTask.filePath}</span>
-                </>
-              )}
-            </div>
-
-            {/* Master Shimmer Progress Bar */}
-            <div className="idm-shimmer-track">
-              <div 
-                className="idm-shimmer-fill" 
-                style={{ width: `${Math.min(100, activePopupTask.percent || 0)}%` }}
-              />
-              <div className="idm-shimmer-text">
-                {activePopupTask.percent || 0}% Completed
-              </div>
-            </div>
-
-            {/* Active Connections Dynamic Streams */}
-            {activePopupTask.segments && activePopupTask.segments.length > 0 && (
-              <div className="idm-segments-panel">
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 4 }}>
-                  Active Segment Streams ({activePopupTask.segments.length} Threads)
-                </div>
-                {activePopupTask.segments.map((seg, idx) => (
-                  <div key={idx} className="idm-segment-row">
-                    <span style={{ width: 65, color: '#94a3b8' }}>Conn {idx + 1}:</span>
-                    <div className="idm-segment-bar">
-                      <div className="idm-segment-fill" style={{ width: `${Math.min(100, seg.percent || 0)}%` }} />
-                    </div>
-                    <span style={{ width: 45, textAlign: 'right', color: '#f8fafc' }}>{Math.floor(seg.percent || 0)}%</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Popup Controls */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {activePopupTask.status === 'downloading' ? (
-                  <button className="btn-secondary" onClick={() => handlePause(activePopupTask.id)}>
-                    <Pause size={14} />
-                    <span>Pause</span>
-                  </button>
-                ) : (
-                  <button className="btn-primary" onClick={() => handleResume(activePopupTask.id)}>
-                    <Play size={14} />
-                    <span>Resume</span>
-                  </button>
-                )}
-
-                {activePopupTask.filePath && (
-                  <button className="btn-secondary" onClick={() => handleOpenFolder(activePopupTask.filePath)}>
-                    <Folder size={14} />
-                    <span>Open Folder</span>
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-secondary" onClick={() => setActivePopupTaskId(null)}>
-                  Hide to Background
-                </button>
-                <button className="btn-secondary" style={{ color: '#f43f5e', borderColor: 'rgba(244, 63, 94, 0.3)' }} onClick={() => promptDelete(activePopupTask)}>
-                  <Trash2 size={14} />
-                  <span>Cancel & Delete</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ============================================================== */}
       {/* 2. DOWNLOAD FILE INFO MODAL (IDM PROMPT) */}
       {/* ============================================================== */}
       {showAddModal && (
         <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
+          <div 
+            className="modal-card" 
+            style={{ transform: `translate(${addModalOffset.x}px, ${addModalOffset.y}px)` }} 
+            onClick={e => e.stopPropagation()}
+          >
+            <div 
+              className="modal-header" 
+              style={{ cursor: 'grab', userSelect: 'none' }} 
+              onMouseDown={e => handleStartDrag(e, setAddModalOffset)}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 20 }}>📥</span>
                 <div className="modal-title">Download File Info</div>
@@ -1444,8 +1542,16 @@ export default function App() {
       {/* ============================================================== */}
       {showBatchModal && (
         <div className="modal-backdrop" onClick={() => setShowBatchModal(false)}>
-          <div className="modal-card" style={{ width: 620 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
+          <div 
+            className="modal-card" 
+            style={{ width: 620, transform: `translate(${batchModalOffset.x}px, ${batchModalOffset.y}px)` }} 
+            onClick={e => e.stopPropagation()}
+          >
+            <div 
+              className="modal-header"
+              style={{ cursor: 'grab', userSelect: 'none' }}
+              onMouseDown={e => handleStartDrag(e, setBatchModalOffset)}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 20 }}>📦</span>
                 <div className="modal-title">Batch / Bulk Downloader</div>
@@ -1506,9 +1612,17 @@ export default function App() {
       {/* ============================================================== */}
       {showSettingsModal && (
         <div className="modal-backdrop" onClick={() => setShowSettingsModal(false)}>
-          <div className="settings-modal-card" onClick={e => e.stopPropagation()}>
+          <div 
+            className="settings-modal-card" 
+            style={{ transform: `translate(${prefModalOffset.x}px, ${prefModalOffset.y}px)` }} 
+            onClick={e => e.stopPropagation()}
+          >
             {/* Header */}
-            <div className="settings-header">
+            <div 
+              className="settings-header" 
+              style={{ cursor: 'grab', userSelect: 'none' }} 
+              onMouseDown={e => handleStartDrag(e, setPrefModalOffset)}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ 
                   width: 32, 
@@ -1570,6 +1684,18 @@ export default function App() {
                 >
                   <HardDrive size={15} />
                   <span>Window & System</span>
+                </button>
+
+                <button 
+                  className={`settings-nav-btn ${activeSettingsTab === 'license' ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveSettingsTab('license');
+                    setLicenseMsg(null);
+                    refreshLicense(true);
+                  }}
+                >
+                  <Key size={15} />
+                  <span>License & Activation</span>
                 </button>
 
                 <button 
@@ -1840,7 +1966,300 @@ export default function App() {
                   </>
                 )}
 
-                {/* 5. About & Support Tab */}
+                {/* 5. Licensing & Activation Tab */}
+                {activeSettingsTab === 'license' && (
+                  <>
+                    <div>
+                      <div className="settings-panel-title">Licensing & Activation</div>
+                      <div className="settings-panel-desc">Cryptographically verified hardware license powered by PB Systems Central License Authority.</div>
+                    </div>
+
+                    <div className="settings-section-card">
+                      {/* Status Banner */}
+                      <div style={{ 
+                        padding: '14px 16px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between',
+                        background: licenseInfo?.isLicensed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                        borderBottom: '1px solid var(--border-subtle)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 22 }}>{licenseInfo?.isLicensed ? '🛡️' : '⚠️'}</span>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)' }}>
+                              {licenseInfo?.isLicensed ? 'Pro License Active' : 'Unregistered / Free Preview'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                              {licenseInfo?.isLicensed 
+                                ? `Registered to: ${licenseInfo.customerName || 'Valued Customer'}` 
+                                : 'Enter your official license key to activate full commercial IDM features.'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ 
+                          padding: '4px 10px', 
+                          borderRadius: 20, 
+                          fontSize: 11, 
+                          fontWeight: 700, 
+                          background: licenseInfo?.isLicensed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                          color: licenseInfo?.isLicensed ? 'var(--accent-emerald)' : 'var(--accent-rose)',
+                          border: `1px solid ${licenseInfo?.isLicensed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`
+                        }}>
+                          {licenseInfo?.status || 'Unregistered'}
+                        </div>
+                      </div>
+
+                      {/* Content Form */}
+                      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        {licenseInfo?.isLicensed ? (
+                          <>
+                            <div className="settings-row-item">
+                              <div>
+                                <div className="settings-row-title">Active License Key</div>
+                                <div className="settings-row-desc mono">{licenseInfo.licenseKey}</div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button 
+                                  className="btn-secondary" 
+                                  style={{ padding: '6px 12px', fontSize: 12, color: 'var(--accent-emerald)', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                                  onClick={() => refreshLicense(false)}
+                                  disabled={licenseLoading}
+                                  title="Sync license details and expiration date from central server"
+                                >
+                                  {licenseLoading ? 'Syncing...' : '🔄 Sync Status'}
+                                </button>
+                                <button 
+                                  className="btn-secondary" 
+                                  style={{ padding: '6px 12px', fontSize: 12, color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.3)' }}
+                                  onClick={async () => {
+                                    if (!window.pandaAPI) return;
+                                    if (!window.confirm('Are you sure you want to deactivate Panda Downloader on this PC?')) return;
+                                    setLicenseLoading(true);
+                                    try {
+                                      await window.pandaAPI.deactivateLicense();
+                                      const info = await window.pandaAPI.getLicenseInfo();
+                                      setLicenseInfo(info);
+                                      setLicenseMsg({ type: 'info', text: 'License successfully deactivated.' });
+                                    } catch (e) {
+                                      setLicenseMsg({ type: 'error', text: 'Deactivation failed.' });
+                                    } finally {
+                                      setLicenseLoading(false);
+                                    }
+                                  }}
+                                  disabled={licenseLoading}
+                                >
+                                  Deactivate PC
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="settings-row-item">
+                              <div>
+                                <div className="settings-row-title">License Plan & Expiry</div>
+                                <div className="settings-row-desc" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                                  <span style={{ 
+                                    padding: '2px 8px', 
+                                    borderRadius: 4, 
+                                    background: 'rgba(16, 185, 129, 0.12)', 
+                                    color: 'var(--accent-emerald)', 
+                                    fontWeight: 700, 
+                                    fontSize: 11 
+                                  }}>
+                                    {licenseInfo.licenseType || 'SUBSCRIPTION'}
+                                  </span>
+                                  <span style={{ fontWeight: 600 }}>
+                                    {licenseInfo.expiryDate === 'Lifetime (No Expiry)' ? 'Lifetime · No Expiry' : `Expires: ${licenseInfo.expiryDate}`}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="settings-row-item">
+                              <div>
+                                <div className="settings-row-title">Bound Machine Fingerprint</div>
+                                <div className="settings-row-desc mono" style={{ fontSize: 10 }}>{licenseInfo.machineId}</div>
+                              </div>
+                              <button 
+                                className="btn-secondary"
+                                style={{ padding: '4px 8px', fontSize: 11 }}
+                                onClick={() => {
+                                  if (navigator.clipboard) {
+                                    navigator.clipboard.writeText(licenseInfo.machineId || '');
+                                    setLicenseMsg({ type: 'success', text: 'Machine ID copied to clipboard!' });
+                                  }
+                                }}
+                              >
+                                📋 Copy
+                              </button>
+                            </div>
+
+                            <div className="settings-row-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-main)' }}>
+                                Official Support & License Management:
+                              </div>
+                              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{ 
+                                    flex: 1, 
+                                    padding: '9px 14px', 
+                                    fontSize: 12, 
+                                    color: '#25D366', 
+                                    borderColor: 'rgba(37, 211, 102, 0.4)', 
+                                    background: 'rgba(37, 211, 102, 0.08)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 6
+                                  }}
+                                  onClick={() => {
+                                    const msg = `Hello PB Systems, I need assistance regarding my Panda Downloader license.\nLicense Key: ${licenseInfo?.licenseKey || ''}\nMachine ID: ${licenseInfo?.machineId || ''}`;
+                                    handleOpenLink(`https://wa.me/9779814891277?text=${encodeURIComponent(msg)}`);
+                                  }}
+                                >
+                                  <MessageCircle size={15} />
+                                  <span>WhatsApp (+977 9814891277)</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{ 
+                                    flex: 1, 
+                                    padding: '9px 14px', 
+                                    fontSize: 12, 
+                                    color: 'var(--accent-cyan)', 
+                                    borderColor: 'rgba(6, 182, 212, 0.4)', 
+                                    background: 'rgba(6, 182, 212, 0.08)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 6
+                                  }}
+                                  onClick={() => handleOpenLink('https://prakash77.com.np')}
+                                >
+                                  <Globe size={15} />
+                                  <span>prakash77.com.np</span>
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-main)', marginBottom: 6 }}>
+                                Enter License Key:
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <input 
+                                  type="text" 
+                                  className="form-input mono" 
+                                  placeholder="PD-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+                                  value={licenseInputKey}
+                                  onChange={e => setLicenseInputKey(e.target.value.toUpperCase())}
+                                  style={{ flex: 1 }}
+                                />
+                                <button 
+                                  className="btn-primary" 
+                                  onClick={async () => {
+                                    if (!licenseInputKey.trim() || !window.pandaAPI) return;
+                                    setLicenseLoading(true);
+                                    setLicenseMsg(null);
+                                    try {
+                                      const res = await window.pandaAPI.activateLicense(licenseInputKey.trim());
+                                      if (res && res.success) {
+                                        setLicenseMsg({ type: 'success', text: res.message });
+                                        const info = await window.pandaAPI.getLicenseInfo();
+                                        setLicenseInfo(info);
+                                        setLicenseInputKey('');
+                                      } else {
+                                        setLicenseMsg({ type: 'error', text: res?.message || 'Activation failed.' });
+                                      }
+                                    } catch (e) {
+                                      setLicenseMsg({ type: 'error', text: 'Connection to PB License Authority failed.' });
+                                    } finally {
+                                      setLicenseLoading(false);
+                                    }
+                                  }} 
+                                  disabled={licenseLoading || !licenseInputKey.trim()}
+                                  style={{ padding: '7px 18px', fontSize: 12, fontWeight: 700 }}
+                                >
+                                  {licenseLoading ? 'Verifying...' : 'Activate Online'}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                              Machine Fingerprint: <code style={{ color: 'var(--accent-cyan)' }}>{licenseInfo?.machineId}</code>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{ 
+                                  flex: 1, 
+                                  padding: '8px 14px', 
+                                  fontSize: 12, 
+                                  color: '#25D366', 
+                                  borderColor: 'rgba(37, 211, 102, 0.4)', 
+                                  background: 'rgba(37, 211, 102, 0.08)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 6
+                                }}
+                                onClick={() => {
+                                  const msg = `Hello PB Systems, I would like to purchase a Panda Downloader license.\nMachine ID: ${licenseInfo?.machineId || ''}`;
+                                  handleOpenLink(`https://wa.me/9779814891277?text=${encodeURIComponent(msg)}`);
+                                }}
+                              >
+                                <MessageCircle size={14} />
+                                <span>Buy / Renew via WhatsApp (+977 9814891277)</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{ 
+                                  padding: '8px 14px', 
+                                  fontSize: 12, 
+                                  color: 'var(--accent-cyan)', 
+                                  borderColor: 'rgba(6, 182, 212, 0.4)', 
+                                  background: 'rgba(6, 182, 212, 0.08)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 6
+                                }}
+                                onClick={() => handleOpenLink('https://prakash77.com.np')}
+                              >
+                                <Globe size={14} />
+                                <span>prakash77.com.np</span>
+                              </button>
+                            </div>
+                          </>
+                        )}
+
+                        {licenseMsg && (
+                          <div style={{ 
+                            padding: '8px 12px', 
+                            borderRadius: 6, 
+                            fontSize: 12, 
+                            background: licenseMsg.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: licenseMsg.type === 'success' ? 'var(--accent-emerald)' : 'var(--accent-rose)',
+                            border: `1px solid ${licenseMsg.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                          }}>
+                            {licenseMsg.text}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* 6. About & Support Tab */}
                 {activeSettingsTab === 'about' && (
                   <>
                     <div>
@@ -1881,7 +2300,7 @@ export default function App() {
                       <div className="settings-row-item">
                         <div>
                           <div className="settings-row-title">Publisher / Developer</div>
-                          <div className="settings-row-desc">PB Tech Zone · Prakash Bhatt</div>
+                          <div className="settings-row-desc">PB Tech Zone · Pankaj Kushwaha</div>
                         </div>
                         <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => handleOpenLink('https://prakash77.com.np')}>
                           <Globe size={13} />
@@ -1941,8 +2360,16 @@ export default function App() {
       {/* ============================================================== */}
       {deleteTarget && (
         <div className="modal-backdrop" onClick={() => setDeleteTarget(null)}>
-          <div className="modal-card" style={{ width: 440 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
+          <div 
+            className="modal-card" 
+            style={{ width: 440, transform: `translate(${deleteModalOffset.x}px, ${deleteModalOffset.y}px)` }} 
+            onClick={e => e.stopPropagation()}
+          >
+            <div 
+              className="modal-header"
+              style={{ cursor: 'grab', userSelect: 'none' }}
+              onMouseDown={e => handleStartDrag(e, setDeleteModalOffset)}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f43f5e' }}>
                 <AlertCircle size={20} />
                 <div className="modal-title" style={{ color: '#f43f5e' }}>Delete Download</div>
@@ -1991,8 +2418,16 @@ export default function App() {
       {/* ============================================================== */}
       {showClearModal && (
         <div className="modal-backdrop" onClick={() => setShowClearModal(false)}>
-          <div className="modal-card" style={{ width: 460 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
+          <div 
+            className="modal-card" 
+            style={{ width: 460, transform: `translate(${clearModalOffset.x}px, ${clearModalOffset.y}px)` }} 
+            onClick={e => e.stopPropagation()}
+          >
+            <div 
+              className="modal-header"
+              style={{ cursor: 'grab', userSelect: 'none' }}
+              onMouseDown={e => handleStartDrag(e, setClearModalOffset)}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f43f5e' }}>
                 <AlertCircle size={20} />
                 <div className="modal-title" style={{ color: '#f43f5e' }}>
@@ -2075,6 +2510,235 @@ export default function App() {
           <button className="titlebar-btn" onClick={() => setClipboardPrompt(null)}>
             <X size={14} />
           </button>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 8. EXPIRATION LOCK MODAL (TRIAL / LICENSE EXPIRED)             */}
+      {/* ============================================================== */}
+      {licenseInfo && !licenseInfo.isValid && !isStatusWindow && !isPromptWindow && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999999,
+            background: 'rgba(5, 8, 16, 0.94)',
+            backdropFilter: 'blur(22px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            userSelect: 'none'
+          }}
+        >
+          <div 
+            style={{
+              width: '100%',
+              maxWidth: 540,
+              background: 'linear-gradient(145deg, #0e1322, #080c16)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              boxShadow: '0 24px 70px rgba(0, 0, 0, 0.85), 0 0 45px rgba(239, 68, 68, 0.18)',
+              borderRadius: 18,
+              padding: '30px 32px',
+              color: 'var(--text-main)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 18,
+              textAlign: 'center'
+            }}
+          >
+            {/* Header Icon */}
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <div 
+                style={{
+                  width: 70,
+                  height: 70,
+                  borderRadius: '50%',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '2px solid rgba(239, 68, 68, 0.45)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 30,
+                  boxShadow: '0 0 25px rgba(239, 68, 68, 0.28)'
+                }}
+              >
+                🔒
+              </div>
+            </div>
+
+            {/* Title & Description */}
+            <div>
+              <div style={{ fontSize: 21, fontWeight: 800, color: '#f8fafc', marginBottom: 6, letterSpacing: '-0.3px' }}>
+                {licenseInfo.isTrial ? '30-Day Free Trial Expired' : 'Software License Expired'}
+              </div>
+              <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.55 }}>
+                {licenseInfo.isTrial 
+                  ? 'Your 30-day evaluation trial for Panda Downloader has ended. All download operations and browser integrations are currently locked.' 
+                  : 'Your license subscription for Panda Downloader has expired. All download operations and browser integrations are currently locked.'}
+              </div>
+            </div>
+
+            {/* Primary Action: WhatsApp Direct Button */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const msg = `Hello PB Systems, my Panda Downloader trial/license has expired.\nPlease extend or provide a license key.\n\nMachine ID: ${licenseInfo.machineId || ''}`;
+                  handleOpenLink(`https://wa.me/9779814891277?text=${encodeURIComponent(msg)}`);
+                }}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, #25D366, #1ebe5d)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: '13px 20px',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 20px rgba(37, 211, 102, 0.35)',
+                  transition: 'transform 0.15s ease, filter 0.15s ease'
+                }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                {/* Official WhatsApp SVG Logo */}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766 0-3.18-2.587-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.634.074-1.815-.417-1.467-.611-2.42-2.1-2.493-2.199-.074-.099-.607-.808-.607-1.543s.385-1.101.521-1.252c.135-.152.296-.19.395-.19.099 0 .198.002.284.006.09.005.212-.034.331.252.124.298.423 1.031.46 1.106.037.075.062.162.012.261-.05.1-.074.162-.149.249-.074.087-.156.194-.223.26-.074.075-.152.156-.065.305.087.149.387.639.83 1.034.57.509 1.05.666 1.2.741.149.074.235.062.323-.037.087-.1.371-.434.471-.582.099-.149.198-.124.333-.074.136.05.866.409 1.015.483.149.075.248.112.284.174.037.062.037.36-.107.765z" />
+                  <path d="M12 2C6.477 2 2 6.477 2 12c0 1.891.524 3.66 1.436 5.176L2 22l4.981-1.399C8.429 21.503 10.155 22 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18.25c-1.637 0-3.163-.481-4.449-1.309l-.319-.204-2.969.833.843-2.883-.223-.332C3.99 14.992 3.5 13.543 3.5 12c0-4.687 3.813-8.5 8.5-8.5s8.5 3.813 8.5 8.5-3.813 8.5-8.5 8.5z" />
+                </svg>
+                <span>Extend or Buy License via WhatsApp (+977 9814891277)</span>
+              </button>
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                Contact us on WhatsApp for trial extension or official license activation.
+              </div>
+            </div>
+
+            {/* Machine ID Box */}
+            <div 
+              style={{
+                background: 'rgba(15, 23, 42, 0.75)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: 8,
+                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10
+              }}
+            >
+              <div style={{ textAlign: 'left', overflow: 'hidden' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Your Machine Fingerprint
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--accent-cyan)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {licenseInfo.machineId}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ padding: '6px 12px', fontSize: 11, flexShrink: 0 }}
+                onClick={() => {
+                  if (licenseInfo.machineId) {
+                    navigator.clipboard.writeText(licenseInfo.machineId);
+                    setCopiedLockMachineId(true);
+                    setTimeout(() => setCopiedLockMachineId(false), 2500);
+                  }
+                }}
+              >
+                {copiedLockMachineId ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
+                <span>{copiedLockMachineId ? 'Copied' : 'Copy ID'}</span>
+              </button>
+            </div>
+
+            {/* License Key Activation Box */}
+            <div 
+              style={{
+                background: 'rgba(15, 23, 42, 0.5)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: 10,
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                textAlign: 'left'
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>
+                Already have an activation key?
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  className="form-input mono"
+                  placeholder="PD-XXXXX-XXXXX-XXXXX-XXXXX"
+                  value={lockKeyInput}
+                  onChange={e => setLockKeyInput(e.target.value.toUpperCase())}
+                  style={{ flex: 1, fontSize: 12, padding: '8px 10px' }}
+                />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={lockKeyLoading || !lockKeyInput.trim()}
+                  onClick={async () => {
+                    if (!lockKeyInput.trim() || !window.pandaAPI) return;
+                    setLockKeyLoading(true);
+                    setLockKeyMsg(null);
+                    try {
+                      const res = await window.pandaAPI.activateLicense(lockKeyInput.trim());
+                      if (res && res.success) {
+                        setLockKeyMsg({ type: 'success', text: res.message });
+                        const info = await window.pandaAPI.getLicenseInfo();
+                        setLicenseInfo(info);
+                        setLockKeyInput('');
+                      } else {
+                        setLockKeyMsg({ type: 'error', text: res?.message || 'Activation failed.' });
+                      }
+                    } catch (e) {
+                      setLockKeyMsg({ type: 'error', text: 'Could not connect to PB License Authority server.' });
+                    } finally {
+                      setLockKeyLoading(false);
+                    }
+                  }}
+                  style={{ padding: '8px 16px', fontSize: 12, fontWeight: 700, flexShrink: 0 }}
+                >
+                  {lockKeyLoading ? 'Verifying...' : 'Unlock Now'}
+                </button>
+              </div>
+
+              {lockKeyMsg && (
+                <div 
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    background: lockKeyMsg.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: lockKeyMsg.type === 'success' ? '#10b981' : '#f87171',
+                    border: `1px solid ${lockKeyMsg.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  }}
+                >
+                  {lockKeyMsg.text}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: '#64748b', paddingTop: 6, borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+              <span>PB Tech Zone · Developer: Pankaj Kushwaha</span>
+              <span 
+                style={{ color: 'var(--accent-cyan)', cursor: 'pointer' }}
+                onClick={() => handleOpenLink('https://prakash77.com.np')}
+              >
+                prakash77.com.np ↗
+              </span>
+            </div>
+          </div>
         </div>
       )}
     </div>

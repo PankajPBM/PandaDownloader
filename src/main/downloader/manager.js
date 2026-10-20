@@ -95,20 +95,35 @@ class DownloadManager extends EventEmitter {
       targetDir = settingsManager.getTargetDirForFile(options.filename || '', url);
     }
 
+    const isM3u8OrMpd = /\.(m3u8|mpd)(\?.*)?$/i.test(url);
+    const isPortal = isVideoPortalUrl(url);
+    const isExplicitDirect = options.quality === 'direct' || options.quality === 'file' || Boolean(options.directStreamUrl);
+    const isDirectBinary = /\.(zip|rar|7z|tar|gz|bz2|iso|xz|exe|msi|apk|dmg|pkg|deb|rpm|bin|img|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|rtf|torrent)(\?.*)?$/i.test(url);
+    const isDirectMediaFile = /\.(mp4|webm|mkv|mov|flv|avi|mp3|m4a|wav|aac|flac|ogg|opus)(\?.*)?$/i.test(url);
+
+    // IDM-Style Instant Connection Routing:
+    // When a direct stream URL or media file is available, bypass yt-dlp scraping entirely and route directly
+    // to DownloadTask's 16-thread concurrent HTTP Range socket engine for instant <100ms startup!
+    // VideoDownloadTask (yt-dlp) is reserved only for raw portal webpages (e.g. youtube.com/watch) or adaptive HLS (.m3u8/.mpd).
+    const useVideoEngine = !isExplicitDirect && !isDirectBinary && (isM3u8OrMpd || (isPortal && !isDirectMediaFile));
+
     let task;
-    if (isVideoPortalUrl(url)) {
+    if (useVideoEngine) {
       task = new VideoDownloadTask({
-        url,
+        url: options.directStreamUrl || url,
         filename: options.filename,
-        format: options.format,
-        quality: options.quality,
+        format: options.format || 'mp4',
+        quality: options.quality || 'best',
+        fileSize: options.fileSize || 0,
         saveDirectory: targetDir,
-        connectionsCount: threads
+        connectionsCount: threads,
+        headers: options.headers || {}
       });
     } else {
       task = new DownloadTask({
-        url,
+        url: options.directStreamUrl || url,
         filename: options.filename,
+        fileSize: options.fileSize || 0,
         saveDirectory: targetDir,
         connectionsCount: threads,
         headers: options.headers || {}

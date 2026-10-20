@@ -16,9 +16,40 @@ const MEDIA_MIME_PATTERNS = [
   /application\/octet-stream/i
 ];
 
-// Broad list of downloadable extensions intercepted from browser
-const DOWNLOAD_EXTENSIONS = /\.(mp4|webm|mkv|flv|avi|mov|wmv|ts|m4v|mp3|m4a|aac|wav|ogg|flac|opus|m3u8|mpd|zip|rar|7z|tar|gz|bz2|iso|xz|exe|msi|apk|dmg|pkg|deb|rpm|bin|img|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|rtf|torrent|cab|msix|appx)(\?.*)?$/i;
+// Broad list of downloadable extensions intercepted from browser (excluding raw video fragment chunks like .ts and .m4s)
+const DOWNLOAD_EXTENSIONS = /\.(mp4|webm|mkv|flv|avi|mov|wmv|m4v|mp3|m4a|aac|wav|ogg|flac|opus|m3u8|mpd|zip|rar|7z|tar|gz|bz2|iso|xz|exe|msi|apk|dmg|pkg|deb|rpm|bin|img|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|rtf|torrent|cab|msix|appx)(\?.*)?$/i;
 const WEB_PAGE_EXTENSIONS = /\.(html?|php|aspx?|jsp|css|js|json)(\?.*)?$/i;
+
+// Global ON/OFF toggle state
+let extensionEnabled = true;
+
+// Load persisted ON/OFF state
+chrome.storage.local.get(['extensionEnabled'], (res) => {
+  if (res && typeof res.extensionEnabled === 'boolean') {
+    extensionEnabled = res.extensionEnabled;
+    syncBadgeState();
+  }
+});
+
+// Sync badge state across all tabs
+function syncBadgeState() {
+  try {
+    if (!extensionEnabled) {
+      chrome.action.setBadgeText({ text: 'OFF' });
+      chrome.action.setBadgeBackgroundColor({ color: '#64748b' });
+    } else {
+      chrome.action.setBadgeText({ text: '' });
+    }
+  } catch (e) {}
+}
+
+// React to storage changes from popup or options
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.extensionEnabled) {
+    extensionEnabled = changes.extensionEnabled.newValue;
+    syncBadgeState();
+  }
+});
 
 // Health check to ensure Panda Downloader desktop daemon is running
 let isPandaRunning = true;
@@ -40,7 +71,7 @@ checkPandaHealth();
 const interceptedIds = new Set();
 
 function shouldInterceptDownload(downloadItem) {
-  if (!isPandaRunning || !downloadItem || !downloadItem.url) return false;
+  if (!extensionEnabled || !isPandaRunning || !downloadItem || !downloadItem.url) return false;
 
   const url = downloadItem.finalUrl || downloadItem.url;
   if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('chrome:') || url.startsWith('chrome-extension:')) {
@@ -171,7 +202,7 @@ try {
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
     try {
-      if (details.tabId < 0) return;
+      if (!extensionEnabled || details.tabId < 0) return;
 
       let contentType = '';
       let contentLength = 0;
@@ -187,6 +218,13 @@ chrome.webRequest.onHeadersReceived.addListener(
       const isMediaMime = MEDIA_MIME_PATTERNS.some(pat => pat.test(contentType));
       const isMediaExt = DOWNLOAD_EXTENSIONS.test(details.url);
       const isAttachment = contentDisposition.includes('attachment');
+
+      // IDM Best Practice: Filter out raw streaming fragment chunks (.ts, .m4s, etc.)
+      const isFragmentChunk = /\.(ts|m4s|m4v-segment|dash|part)(\?.*)?$/i.test(details.url) || 
+                              /\b(seg-\d+|fragment-\d+|chunk-\d+|range=\d+-\d+)\b/i.test(details.url);
+      if (isFragmentChunk) {
+        return;
+      }
 
       // Filter out UI sound effects and tiny chunks (< 150KB unless explicit streaming playlist like m3u8)
       const isStreamManifest = details.url.includes('.m3u8') || details.url.includes('.mpd');
@@ -222,15 +260,27 @@ chrome.webRequest.onHeadersReceived.addListener(
           mediaList.push(mediaItem);
           tabMediaMap.set(details.tabId, mediaList);
 
-          // Update badge count safely
-          try {
-            chrome.action.setBadgeText({ tabId: details.tabId, text: `${mediaList.length}` }, () => {
-              if (chrome.runtime.lastError) {}
-            });
-            chrome.action.setBadgeBackgroundColor({ tabId: details.tabId, color: '#10b981' }, () => {
-              if (chrome.runtime.lastError) {}
-            });
-          } catch (e) {}
+          // Update badge count safely when enabled
+          if (extensionEnabled) {
+            try {
+              chrome.action.setBadgeText({ tabId: details.tabId, text: `${mediaList.length}` }, () => {
+                if (chrome.runtime.lastError) {}
+              });
+              chrome.action.setBadgeBackgroundColor({ tabId: details.tabId, color: '#10b981' }, () => {
+                if (chrome.runtime.lastError) {}
+              });
+            } catch (e) {}
+
+            // Immediately notify floating video panel on this tab
+            try {
+              chrome.tabs.sendMessage(details.tabId, {
+                action: 'MEDIA_DETECTED',
+                media: mediaList
+              }, () => {
+                if (chrome.runtime.lastError) {}
+              });
+            } catch (e) {}
+          }
         }
       }
     } catch (err) {
@@ -241,24 +291,57 @@ chrome.webRequest.onHeadersReceived.addListener(
   ['responseHeaders']
 );
 
-// Clear tab records when closed or refreshed
+// Clear tab records when closed or refreshed, or when navigating to another video (SPA)
 chrome.tabs.onRemoved.addListener((tabId) => tabMediaMap.delete(tabId));
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === 'loading') {
+  if (changeInfo.status === 'loading' || changeInfo.url) {
     tabMediaMap.delete(tabId);
     try {
-      chrome.action.setBadgeText({ tabId, text: '' }, () => {
-        if (chrome.runtime.lastError) {}
-      });
+      if (extensionEnabled) {
+        chrome.action.setBadgeText({ tabId, text: '' }, () => {
+          if (chrome.runtime.lastError) {}
+        });
+      }
     } catch (e) {}
   }
 });
 
 // Message listener from content script and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'SET_EXTENSION_ENABLED') {
+    extensionEnabled = Boolean(message.enabled);
+    chrome.storage.local.set({ extensionEnabled: extensionEnabled });
+    syncBadgeState();
+
+    // Broadcast to all open tabs so floating panel is immediately removed when turned OFF
+    try {
+      chrome.tabs.query({}, (tabs) => {
+        for (const t of tabs) {
+          if (t && t.id) {
+            chrome.tabs.sendMessage(t.id, { action: 'TOGGLE_EXTENSION', enabled: extensionEnabled }).catch(() => {});
+          }
+        }
+      });
+    } catch (e) {}
+
+    sendResponse({ success: true, enabled: extensionEnabled });
+    return true;
+  }
+
   if (message.action === 'GET_TAB_MEDIA') {
-    const tabId = message.tabId || (sender.tab && sender.tab.id);
-    const list = tabMediaMap.get(tabId) || [];
+    let tabId = message.tabId || (sender.tab && sender.tab.id);
+    let list = (tabId && tabMediaMap.get(tabId)) || [];
+    if (list.length === 0) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0]) {
+          const fallbackList = tabMediaMap.get(tabs[0].id) || [];
+          sendResponse({ media: fallbackList });
+        } else {
+          sendResponse({ media: [] });
+        }
+      });
+      return true;
+    }
     sendResponse({ media: list });
     return true;
   }
