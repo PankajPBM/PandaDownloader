@@ -38,14 +38,14 @@ function showDownloadStatusWindow(taskId) {
   const iconPath = path.join(__dirname, '../../assets/icon.png');
   statusWindow = new BrowserWindow({
     width: 650,
-    height: 610,
+    height: 380,
     minWidth: 560,
-    minHeight: 520,
+    minHeight: 350,
     useContentSize: true,
     resizable: true,
     maximizable: false,
     minimizable: true,
-    alwaysOnTop: true, // Floats over all apps like IDM!
+    alwaysOnTop: false, // Floats to foreground on show, but lets user work on other tabs/apps freely
     frame: false,
     backgroundColor: '#070a12',
     icon: iconPath,
@@ -455,6 +455,20 @@ function setupIpcHandlers() {
     if (statusWindow && !statusWindow.isDestroyed()) {
       statusWindow.close();
       statusWindow = null;
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle('resize-status-window', (event, { expanded }) => {
+    if (statusWindow && !statusWindow.isDestroyed()) {
+      const bounds = statusWindow.getBounds();
+      const targetHeight = expanded ? 620 : 380;
+      statusWindow.setBounds({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: targetHeight
+      });
     }
     return { success: true };
   });

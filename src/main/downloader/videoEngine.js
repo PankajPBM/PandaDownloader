@@ -316,6 +316,11 @@ class VideoDownloadTask extends EventEmitter {
             this.downloadedBytes = this.totalBytes;
           }
 
+          this.status = 'completed';
+          this.percent = 100;
+          this.speed = 0;
+          if (finalPath) this.filePath = finalPath;
+
           const prog = this.getProgress();
           prog.status = 'completed';
           prog.percent = 100;
@@ -331,7 +336,8 @@ class VideoDownloadTask extends EventEmitter {
             id: this.id,
             filePath: finalPath,
             filename: this.filename,
-            totalBytes: this.totalBytes
+            totalBytes: this.totalBytes,
+            percent: 100
           });
         } else if (this.status !== 'cancelled') {
           this.status = 'error';
@@ -392,36 +398,44 @@ class VideoDownloadTask extends EventEmitter {
   }
 
   getProgress() {
+    const isCompleted = this.status === 'completed';
+    const total = this.totalBytes || 0;
+    const downloaded = isCompleted && total > 0 ? total : this.downloadedBytes;
+    const percent = isCompleted ? 100 : parseFloat(this.percent.toFixed(1));
     return {
       id: this.id,
       status: this.status,
       filename: this.filename,
-      downloadedBytes: this.downloadedBytes,
-      totalBytes: this.totalBytes,
-      percent: parseFloat(this.percent.toFixed(1)),
-      speed: this.speed,
+      downloadedBytes: downloaded,
+      totalBytes: total,
+      percent: percent,
+      speed: isCompleted ? 0 : this.speed,
       supportsRange: true,
       segments: this.segments,
-      phase: this.streamPhase === 3 ? 'merging' : 'downloading'
+      phase: isCompleted ? 'completed' : (this.streamPhase === 3 ? 'merging' : 'downloading')
     };
   }
 
   toJSON() {
+    const isCompleted = this.status === 'completed';
+    const total = this.totalBytes || 0;
+    const downloaded = isCompleted && total > 0 ? total : this.downloadedBytes;
+    const percent = isCompleted ? 100 : parseFloat(this.percent.toFixed(1));
     return {
       id: this.id,
       url: this.url,
       filename: this.filename,
       filePath: this.filePath,
       status: this.status,
-      downloadedBytes: this.downloadedBytes,
-      totalBytes: this.totalBytes,
-      speed: this.speed,
-      percent: parseFloat(this.percent.toFixed(1)),
+      downloadedBytes: downloaded,
+      totalBytes: total,
+      speed: isCompleted ? 0 : this.speed,
+      percent: percent,
       supportsRange: true,
       error: this.error,
       connectionsCount: this.connectionsCount,
       segments: this.segments,
-      phase: this.streamPhase === 3 ? 'merging' : 'downloading'
+      phase: isCompleted ? 'completed' : (this.streamPhase === 3 ? 'merging' : 'downloading')
     };
   }
 }

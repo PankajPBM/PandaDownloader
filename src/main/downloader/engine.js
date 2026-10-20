@@ -578,18 +578,21 @@ class DownloadTask extends EventEmitter {
   }
 
   getProgress() {
-    const percent = this.totalBytes > 0 
-      ? Math.min(100, (this.downloadedBytes / this.totalBytes) * 100)
-      : 0;
+    const isCompleted = this.status === 'completed';
+    const total = this.totalBytes || 0;
+    const downloaded = isCompleted && total > 0 ? total : this.downloadedBytes;
+    const percent = isCompleted 
+      ? 100 
+      : (total > 0 ? Math.min(100, (downloaded / total) * 100) : 0);
     
     return {
       id: this.id,
       status: this.status,
       filename: this.filename,
-      downloadedBytes: this.downloadedBytes,
-      totalBytes: this.totalBytes,
+      downloadedBytes: downloaded,
+      totalBytes: total,
       percent: parseFloat(percent.toFixed(2)),
-      speed: this.speed,
+      speed: isCompleted ? 0 : this.speed,
       supportsRange: this.supportsRange,
       segments: this.segments.map(s => ({
         id: s.id,
@@ -597,23 +600,30 @@ class DownloadTask extends EventEmitter {
         current: s.current,
         end: s.end,
         total: s.total,
-        downloaded: s.downloaded,
-        percent: s.total > 0 ? parseFloat(Math.min(100, (s.downloaded / s.total) * 100).toFixed(1)) : 0,
-        status: s.status
+        downloaded: isCompleted ? s.total : s.downloaded,
+        percent: isCompleted ? 100 : (s.total > 0 ? parseFloat(Math.min(100, (s.downloaded / s.total) * 100).toFixed(1)) : 0),
+        status: isCompleted ? 'completed' : s.status
       }))
     };
   }
 
   toJSON() {
+    const isCompleted = this.status === 'completed';
+    const total = this.totalBytes || 0;
+    const downloaded = isCompleted && total > 0 ? total : this.downloadedBytes;
+    const percent = isCompleted 
+      ? 100 
+      : (total > 0 ? parseFloat(Math.min(100, (downloaded / total) * 100).toFixed(2)) : 0);
     return {
       id: this.id,
       url: this.url,
       filename: this.filename,
       filePath: this.filePath,
       status: this.status,
-      downloadedBytes: this.downloadedBytes,
-      totalBytes: this.totalBytes,
-      speed: this.speed,
+      downloadedBytes: downloaded,
+      totalBytes: total,
+      percent: percent,
+      speed: isCompleted ? 0 : this.speed,
       supportsRange: this.supportsRange,
       error: this.error,
       connectionsCount: this.connectionsCount,

@@ -40,6 +40,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState('storage');
   const [activePopupTaskId, setActivePopupTaskId] = useState(null);
+  const [statusWindowExpanded, setStatusWindowExpanded] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleteFileFromDisk, setDeleteFileFromDisk] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
@@ -94,6 +95,7 @@ export default function App() {
     autoCategorize: true,
     autoAcceptDownloads: false,
     showCompletionDialog: true,
+    autoCloseOnCompletion: true,
     openFolderOnCompletion: false,
     defaultThreads: 16,
     maxConcurrent: 4,
@@ -180,7 +182,9 @@ export default function App() {
         if (settings.openFolderOnCompletion && data.filePath) {
           handleOpenFolder(data.filePath);
         }
-        setActivePopupTaskId(curr => curr === data.id ? null : curr);
+        if (!isStatusWindow) {
+          setActivePopupTaskId(curr => curr === data.id ? null : curr);
+        }
       });
 
       let unsubActiveStatusTask = null;
@@ -281,6 +285,21 @@ export default function App() {
       setExtensionsInput('mp4, mkv, webm, zip, rar, 7z, iso, exe');
     }
   }, []);
+
+  // Auto-close status popup on completion according to settings
+  useEffect(() => {
+    if (!isStatusWindow) return;
+    const currentTask = activePopupTask || tasks[0] || (history.length > 0 ? history[0] : null);
+    const isCompleted = currentTask && currentTask.status === 'completed';
+    if (isCompleted && (settings.autoCloseOnCompletion !== false && settings.showCompletionDialog !== false)) {
+      const timer = setTimeout(() => {
+        if (window.pandaAPI && window.pandaAPI.closeStatusWindow) {
+          window.pandaAPI.closeStatusWindow();
+        }
+      }, 1800);
+      return () => clearTimeout(timer);
+    }
+  }, [isStatusWindow, activePopupTask, tasks, history, settings.autoCloseOnCompletion, settings.showCompletionDialog]);
 
   // Handlers
   const handleStartDownload = async () => {
@@ -641,6 +660,8 @@ export default function App() {
     };
 
     const isDone = task.status === 'completed';
+    const displayPercent = isDone ? 100 : Math.min(100, Math.floor(task.percent || 0));
+    const displayDownloaded = isDone && task.totalBytes > 0 ? task.totalBytes : (task.downloadedBytes || 0);
 
     return (
       <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: 12, background: 'var(--bg-secondary)', color: 'var(--text-main)', userSelect: 'none', border: '1px solid var(--border-focus)', borderRadius: 10, boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -681,7 +702,7 @@ export default function App() {
             <span className="idm-grid-value">{formatBytes(task.totalBytes)}</span>
 
             <span className="idm-grid-label">Downloaded:</span>
-            <span className="idm-grid-value">{formatBytes(task.downloadedBytes)} ({Math.floor(task.percent || 0)}%)</span>
+            <span className="idm-grid-value">{formatBytes(displayDownloaded)} ({displayPercent}%)</span>
 
             <span className="idm-grid-label">Transfer Rate:</span>
             <span className="idm-grid-value" style={{ color: '#06b6d4', fontWeight: 700 }}>
@@ -708,15 +729,45 @@ export default function App() {
           <div className="idm-shimmer-track">
             <div 
               className="idm-shimmer-fill" 
-              style={{ width: `${Math.min(100, task.percent || 0)}%` }}
+              style={{ width: `${displayPercent}%` }}
             />
             <div className="idm-shimmer-text">
-              {Math.floor(task.percent || 0)}% Completed
+              {displayPercent}% Completed
             </div>
           </div>
 
-          {/* Active Connections Dynamic Streams (2-column IDM style) */}
+          {/* Show / Hide Details Toggle */}
           {task.segments && task.segments.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 4px 0' }}>
+              <button 
+                type="button"
+                className="btn-secondary" 
+                style={{ 
+                  padding: '3px 14px', 
+                  fontSize: 11, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 6,
+                  borderRadius: 6,
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer'
+                }}
+                onClick={() => {
+                  const next = !statusWindowExpanded;
+                  setStatusWindowExpanded(next);
+                  if (window.pandaAPI && window.pandaAPI.resizeStatusWindow) {
+                    window.pandaAPI.resizeStatusWindow(next);
+                  }
+                }}
+              >
+                <span>{statusWindowExpanded ? 'Hide Details ▲' : 'Show Full Details ▼'}</span>
+                <span style={{ fontSize: 10, opacity: 0.8 }}>({task.segments.length} Streams)</span>
+              </button>
+            </div>
+          )}
+
+          {/* Active Connections Dynamic Streams (2-column IDM style) */}
+          {statusWindowExpanded && task.segments && task.segments.length > 0 && (
             <div className="idm-segments-panel" style={{ padding: '6px 10px', borderRadius: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
@@ -1079,9 +1130,9 @@ export default function App() {
                             {fixMojibake(task.filename) || task.url}
                           </div>
                           <div className="file-details">
-                            <span>{formatBytes(task.downloadedBytes)} / {formatBytes(task.totalBytes)}</span>
+                            <span>{formatBytes(task.status === 'completed' && task.totalBytes > 0 ? task.totalBytes : task.downloadedBytes)} / {formatBytes(task.totalBytes)}</span>
                             <span>•</span>
-                            <span>{task.percent || 0}%</span>
+                            <span>{task.status === 'completed' ? 100 : (task.percent || 0)}%</span>
                             {task.status === 'downloading' && (
                               <>
                                 <span>•</span>
@@ -1139,7 +1190,7 @@ export default function App() {
                     <div className="master-progress-track">
                       <div 
                         className="master-progress-fill" 
-                        style={{ width: `${Math.min(100, task.percent || 0)}%` }}
+                        style={{ width: `${task.status === 'completed' ? 100 : Math.min(100, task.percent || 0)}%` }}
                       />
                     </div>
 
@@ -1751,6 +1802,21 @@ export default function App() {
                             type="checkbox" 
                             checked={settings.showCompletionDialog}
                             onChange={e => setSettings(prev => ({ ...prev, showCompletionDialog: e.target.checked }))}
+                          />
+                          <span className="slider"></span>
+                        </label>
+                      </div>
+
+                      <div className="settings-row-item">
+                        <div>
+                          <div className="settings-row-title">Auto-Close Dialog on Completion</div>
+                          <div className="settings-row-desc">Automatically close the status window once download reaches 100%</div>
+                        </div>
+                        <label className="switch">
+                          <input 
+                            type="checkbox" 
+                            checked={settings.autoCloseOnCompletion !== false}
+                            onChange={e => setSettings(prev => ({ ...prev, autoCloseOnCompletion: e.target.checked }))}
                           />
                           <span className="slider"></span>
                         </label>

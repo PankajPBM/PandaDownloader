@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('pandaAPI', {
   close: () => ipcRenderer.invoke('window-close'),
   showStatusWindow: (taskId) => ipcRenderer.invoke('show-status-window', taskId),
   closeStatusWindow: () => ipcRenderer.invoke('close-status-window'),
+  resizeStatusWindow: (expanded) => ipcRenderer.invoke('resize-status-window', { expanded }),
 
   closePromptWindow: () => ipcRenderer.invoke('close-prompt-window'),
   startDownloadFromPrompt: (data) => ipcRenderer.invoke('start-download-from-prompt', data),
